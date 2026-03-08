@@ -1,2 +1,6 @@
 .vscode/
 .kiro/
+BentoXTTSStreaming/
+venv/
+.env
+# bentofile.yaml

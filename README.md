@@ -1,53 +1,104 @@
-# Boliye-ji 🎓
+# Hindi Voice Agent for Government Schemes 🇮🇳
 
-A voice-first scholarship discovery platform helping Indian students find government schemes through natural Hindi conversations.
+A Hindi-speaking voice agent that helps students discover government scholarships and schemes through phone calls. Built with BentoML, Pipecat, and open-source models.
 
-## Problem
+## Overview
 
-Millions of Indian students, especially in rural areas, miss out on government scholarships due to:
-- Complex eligibility criteria across multiple schemes
-- Language barriers (most information in English)
-- Low digital literacy preventing effective online research
-- Lack of awareness about available schemes
+This voice agent accepts phone calls via Twilio and responds to user queries in Hindi about government schemes and scholarships. It uses function calling to check eligibility, collect information, and provide detailed scheme information.
 
-## Solution
+## Features
 
-Boliye-ji enables students to discover relevant scholarships through simple voice conversations in Hindi. Just speak naturally, and the system guides you through eligibility checking and provides actionable information about schemes you qualify for.
+- **Hindi Voice Interaction**: Natural Hindi conversation using XTTS TTS and Whisper STT
+- **Function Calling**: LLM can call 3 functions:
+  1. **check_eligibility** - Check eligibility for government schemes based on category, income, education
+  2. **collect_user_info** - Collect student information (name, age, state, education)
+  3. **get_scheme_details** - Get detailed scheme information (eligibility, documents, amount)
+- **Twilio Integration**: Accessible via phone number
+- **Small Model**: Uses <8B parameter LLM (Llama 3.1 8B) that runs on 8GB GPU (RTX 4060)
+- **4 Government Schemes**: Pre-loaded with dummy data for testing
 
-## Key Features
+## Files
 
-- Voice-first interaction in Hindi (no typing required)
-- Guided conversation flow with smart questions
-- Real-time eligibility matching across 50+ schemes
-- Simple explanations of benefits and requirements
-- Document checklists in Hindi
-- Step-by-step application guidance
-- SMS delivery of scheme links
-- Works on low-bandwidth 2G/3G connections
+- `hindi_voice_service.py` - Main BentoML service with Twilio WebSocket integration
+- `hindi_bot_logic.py` - Bot logic with function calling and Pipecat pipeline
+- `test_functions.py` - Standalone test script (no external services needed)
+- `requirements.txt` - Python dependencies
+- `bentofile.yaml` - BentoML deployment configuration
 
-## Target Users
+## Quick Start
 
-- Rural students (Classes 8-12, undergraduate)
-- Urban low-income students
-- First-generation learners
-- Students with limited English proficiency
-- Students with minimal smartphone experience
+### 1. Test Functions (No Setup Required)
 
-## How It Works
+```bash
+python test_functions.py
+```
 
-1. User opens the app and speaks in Hindi
-2. System asks guided questions about education, income, category, state
-3. Eligibility engine matches user profile against scheme database
-4. System explains relevant schemes in simple Hindi
-5. User can ask about documents, application process, deadlines
-6. System sends SMS with scheme links for easy access
+This tests all 3 functions and shows Hindi responses - perfect for verifying the output!
 
-## Technology Stack
+### 2. Run Full Service
 
-### AWS Services
-- **Amazon Transcribe**: Speech-to-text with custom Hindi vocabulary
-- **Amazon Polly**: Text-to-speech with natural Hindi voice (Aditi)
-- **AWS Lambda**: Serverless compute for business logic
+See [SETUP.md](SETUP.md) for detailed setup instructions.
+
+## Function Examples
+
+### Check Eligibility
+**User**: "मैं एससी कैटेगरी से हूं, मेरी आय दो लाख रुपये है"
+
+**Response**: "आपकी पात्रता के अनुसार, आप निम्नलिखित योजनाओं के लिए आवेदन कर सकते हैं: प्री-मैट्रिक स्कॉलरशिप योजना, एससीएसटी छात्रवृत्ति योजना..."
+
+### Collect Info
+**User**: "मेरा नाम राज है, मैं 17 साल का हूं, बिहार से हूं"
+
+**Response**: "धन्यवाद! मैंने आपकी जानकारी सहेज ली है। आपका नाम राज है, आपकी उम्र 17 वर्ष है..."
+
+### Get Scheme Details
+**User**: "पोस्ट मैट्रिक स्कॉलरशिप के बारे में बताओ"
+
+**Response**: "पोस्ट-मैट्रिक स्कॉलरशिप योजना दसवीं कक्षा के बाद की पढ़ाई के लिए है। इसमें बीस हजार से पचास हजार रुपये मिलते हैं..."
+
+## Architecture
+
+```
+Phone Call → Twilio → WebSocket
+                ↓
+         BentoML Service
+                ↓
+         Pipecat Pipeline:
+    VAD → STT (Whisper) → LLM (Llama 3.1 8B)
+                ↓
+         Function Calling:
+    - check_eligibility()
+    - collect_user_info()
+    - get_scheme_details()
+                ↓
+    TTS (XTTS Hindi) → Twilio → Phone
+```
+
+## Hardware Requirements
+
+- NVIDIA GPU with 8GB VRAM (e.g., RTX 4060)
+- CUDA 11.8+
+- Python 3.11
+
+## Included Schemes
+
+1. **प्री-मैट्रिक स्कॉलरशिप** - For class 1-10 students
+2. **पोस्ट-मैट्रिक स्कॉलरशिप** - For college students
+3. **एससीएसटी छात्रवृत्ति** - For SC/ST students
+4. **मेरिट कम मीन्स** - Merit-based scholarship
+
+Each scheme includes details on eligibility, documents, and amounts in clear Hindi.
+
+## External Services Required
+
+1. **LLM Service** - Llama 3.1 8B (via BentoVLLM or Ollama)
+2. **XTTS Service** - Hindi text-to-speech (via BentoXTTSStreaming)
+
+See [SETUP.md](SETUP.md) for deployment instructions.
+
+## License
+
+Demonstration project for government scheme assistance.
 - **Amazon DynamoDB**: Scheme database and session management
 - **Amazon API Gateway**: REST and WebSocket APIs
 - **Amazon ElastiCache**: Redis caching for performance
