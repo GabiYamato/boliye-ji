@@ -3,5 +3,7 @@
 BentoXTTSStreaming/
 venv/
 .env
-V1_backup/
+
+#ignore everything in  Backup folder
+Backup/
 # bentofile.yaml
