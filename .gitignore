@@ -3,4 +3,5 @@
 BentoXTTSStreaming/
 venv/
 .env
+V1_backup/
 # bentofile.yaml
