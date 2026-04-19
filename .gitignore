@@ -4,6 +4,15 @@ BentoXTTSStreaming/
 venv/
 .env
 
+__pycache__/
+*.py[cod]
+*.db
+
+node_modules/
+dist/
+frontend/dist/
+
+.DS_Store
+
 #ignore everything in  Backup folder
 Backup/
-# bentofile.yaml
