@@ -1,0 +1,1 @@
+whisper_model = None
