@@ -1,0 +1,76 @@
+from datetime import datetime, timedelta, timezone
+
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+
+import config
+from auth.models import User
+
+pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(p: str) -> str:
+    return pwd.hash(p)
+
+
+def verify_password(p: str, hashed: str) -> bool:
+    return pwd.verify(p, hashed)
+
+
+def create_access_token(sub: str) -> str:
+    exp = datetime.now(timezone.utc) + timedelta(hours=config.JWT_EXPIRE_HOURS)
+    return jwt.encode(
+        {"sub": sub, "exp": exp},
+        config.JWT_SECRET,
+        algorithm=config.JWT_ALGORITHM,
+    )
+
+
+def decode_token(token: str) -> str | None:
+    try:
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
+        sub = payload.get("sub")
+        return str(sub) if sub else None
+    except JWTError:
+        return None
+
+
+def get_user_by_email(db: Session, email: str) -> User | None:
+    return db.query(User).filter(User.email == email.lower()).first()
+
+
+def create_email_user(db: Session, email: str, password: str) -> User:
+    u = User(email=email.lower(), hashed_password=hash_password(password), is_google=False)
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def get_or_create_google_user(db: Session, email: str) -> User:
+    u = get_user_by_email(db, email)
+    if u:
+        return u
+    u = User(email=email.lower(), hashed_password=None, is_google=True)
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def verify_google_token(credential: str) -> str | None:
+    if not config.GOOGLE_CLIENT_ID:
+        return None
+    try:
+        info = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            config.GOOGLE_CLIENT_ID,
+        )
+        email = info.get("email")
+        return str(email).lower() if email else None
+    except ValueError:
+        return None
