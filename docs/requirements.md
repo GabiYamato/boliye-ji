@@ -24,6 +24,7 @@ Declared in `backend/requirements.txt`, including:
 - `qdrant-client`
 - `openai-whisper` (install with `pip install openai-whisper --no-build-isolation` if the default install fails)
 - `transformers`, `torch`, `scipy` — local Hugging Face TTS (`facebook/mms-tts-eng` by default)
+- optional Qwen TTS endpoint via OpenAI-compatible `/audio/speech` API (`TTS_PROVIDER=qwen`)
 - Auth: `python-jose`, `passlib[bcrypt]`, `google-auth` (Google OAuth optional)
 
 ## Frontend packages
@@ -33,6 +34,11 @@ Declared in `frontend/package.json`: React 19, Vite 8, React Router, `@react-oau
 ## Hugging Face
 
 - First TTS run downloads `TTS_HF_MODEL` (default `facebook/mms-tts-eng`). Disk space and network required.
+
+## Qwen TTS (optional)
+
+- Configure `TTS_PROVIDER=qwen` plus `TTS_QWEN_BASE_URL`, `TTS_QWEN_MODEL` and optional `TTS_QWEN_API_KEY`.
+- `TTS_PROVIDER=auto` will attempt Qwen first (if configured) and fallback to local HF TTS.
 
 ## Optional
 

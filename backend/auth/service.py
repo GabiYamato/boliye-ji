@@ -12,12 +12,24 @@ from auth.models import User
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def password_supported_by_bcrypt(p: str) -> bool:
+    # bcrypt supports up to 72 bytes; enforce this before hashing.
+    return len(p.encode("utf-8")) <= 72
+
+
 def hash_password(p: str) -> str:
+    if not password_supported_by_bcrypt(p):
+        raise ValueError("Password is too long for bcrypt")
     return pwd.hash(p)
 
 
 def verify_password(p: str, hashed: str) -> bool:
-    return pwd.verify(p, hashed)
+    if not password_supported_by_bcrypt(p):
+        return False
+    try:
+        return pwd.verify(p, hashed)
+    except ValueError:
+        return False
 
 
 def create_access_token(sub: str) -> str:

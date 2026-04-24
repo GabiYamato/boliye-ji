@@ -11,17 +11,25 @@ from auth.db import Base, engine
 from auth.router import router as auth_router
 from chat.rag import init_qdrant_collection
 from chat.router import router as chat_router
+from eligibility.router import router as eligibility_router
+from eligibility.tree_rag import bootstrap_tree_rag
 from voice.router import router as voice_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
-        state.whisper_model = whisper.load_model(config.WHISPER_MODEL)
+        if (config.STT_BACKEND or "whisper").lower() in {"faster-whisper", "faster_whisper", "faster"}:
+            from faster_whisper import WhisperModel
+
+            state.whisper_model = WhisperModel(config.WHISPER_MODEL, device="auto", compute_type="int8")
+        else:
+            state.whisper_model = whisper.load_model(config.WHISPER_MODEL)
     except Exception:
         state.whisper_model = None
     Base.metadata.create_all(bind=engine)
     init_qdrant_collection()
+    bootstrap_tree_rag()
     yield
 
 
@@ -35,6 +43,7 @@ app.add_middleware(
 )
 app.include_router(auth_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(eligibility_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 
 
