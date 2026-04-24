@@ -8,6 +8,7 @@ from auth.service import (
     create_email_user,
     get_or_create_google_user,
     get_user_by_email,
+    password_supported_by_bcrypt,
     verify_google_token,
     verify_password,
 )
@@ -21,6 +22,8 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password too short")
+    if not password_supported_by_bcrypt(body.password):
+        raise HTTPException(status_code=400, detail="Password too long")
     u = create_email_user(db, body.email, body.password)
     return TokenOut(access_token=create_access_token(u.email))
 

@@ -1,0 +1,133 @@
+{
+  "root": {
+    "id": "root",
+    "name": "Government Schemes India",
+    "description": "Eligibility tree for common public schemes",
+    "children": [
+      {
+        "id": "cat-education",
+        "name": "Education",
+        "description": "Scholarships and learning support",
+        "children": [
+          {
+            "id": "sub-higher-education",
+            "name": "Higher Education",
+            "children": [
+              {
+                "id": "scheme-post-matric-scholarship",
+                "name": "Post Matric Scholarship",
+                "description": "Scholarship for students pursuing higher education with low family income.",
+                "attributes": {
+                  "min_age": 16,
+                  "max_age": 30,
+                  "max_income": 300000,
+                  "location": ["india"],
+                  "category": ["student"],
+                  "next_steps": [
+                    "Collect income certificate",
+                    "Keep admission proof ready",
+                    "Apply on the national scholarship portal"
+                  ]
+                }
+              },
+              {
+                "id": "scheme-merit-girl-stem",
+                "name": "Merit STEM Scholarship for Girls",
+                "description": "Support for women students in engineering and science streams.",
+                "attributes": {
+                  "min_age": 17,
+                  "max_age": 28,
+                  "max_income": 800000,
+                  "location": ["india"],
+                  "category": ["student", "female-student"],
+                  "next_steps": [
+                    "Upload previous exam mark sheet",
+                    "Get institution verification",
+                    "Submit application before deadline"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cat-welfare",
+        "name": "Income Support",
+        "description": "Direct benefit and subsidy schemes",
+        "children": [
+          {
+            "id": "sub-household-subsidy",
+            "name": "Household Subsidy",
+            "children": [
+              {
+                "id": "scheme-low-income-subsidy",
+                "name": "Low Income Utility Subsidy",
+                "description": "Utility subsidy for low income families in urban and semi-urban locations.",
+                "attributes": {
+                  "min_age": 18,
+                  "max_age": 60,
+                  "max_income": 250000,
+                  "location": ["india"],
+                  "category": ["household", "worker"],
+                  "next_steps": [
+                    "Provide electricity bill copy",
+                    "Provide bank details for direct transfer",
+                    "Visit district welfare office for verification"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cat-rural",
+        "name": "Rural Development",
+        "description": "Support for rural livelihoods and infrastructure",
+        "children": [
+          {
+            "id": "sub-rural-livelihood",
+            "name": "Rural Livelihood",
+            "children": [
+              {
+                "id": "scheme-rural-enterprise-grant",
+                "name": "Rural Micro Enterprise Grant",
+                "description": "Seed funding support for rural youth and self-help groups starting small enterprises.",
+                "attributes": {
+                  "min_age": 21,
+                  "max_age": 45,
+                  "max_income": 500000,
+                  "location": ["india", "rural"],
+                  "category": ["rural", "entrepreneur", "worker"],
+                  "next_steps": [
+                    "Prepare one-page business idea",
+                    "Obtain panchayat residence certificate",
+                    "Submit application to block development office"
+                  ]
+                }
+              },
+              {
+                "id": "scheme-rural-housing-support",
+                "name": "Rural Housing Support",
+                "description": "Housing support for low income rural families.",
+                "attributes": {
+                  "min_age": 18,
+                  "max_age": 65,
+                  "max_income": 350000,
+                  "location": ["india", "rural"],
+                  "category": ["household", "rural"],
+                  "next_steps": [
+                    "Get land ownership or consent documents",
+                    "Get family income certificate",
+                    "Apply through gram panchayat portal"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

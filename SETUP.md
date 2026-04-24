@@ -32,6 +32,13 @@ pip install -r requirements.txt
 pip install openai-whisper --no-build-isolation
 ```
 
+Optional for lower STT latency:
+
+- set `STT_BACKEND=faster-whisper` in root `.env`
+- keep `WHISPER_MODEL=large-v3` (or `small` for faster CPU runs)
+
+Tree-RAG local vector data uses Chroma and persists under `backend/.chroma` by default.
+
 Copy `.env.example` to `.env` in the **repository root** and fill values.
 
 ```bash
@@ -40,6 +47,20 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Whisper downloads a model on first run; SSL or network issues may require pre-downloading weights.
+
+## 4.1 Eligibility pipeline demo
+
+```bash
+cd backend
+python scripts/demo_eligibility.py
+python scripts/demo_eligibility.py "I am 24 from rural India with income 280000 and I run a small business" 24 280000 "rural india" entrepreneur
+```
+
+Optional validation command:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
 
 ## 5. Frontend
 
@@ -55,6 +76,20 @@ Optional `frontend/.env`:
 
 - `VITE_GOOGLE_CLIENT_ID` — Google sign-in button
 - `VITE_API_URL` — leave empty for dev proxy; set for production builds
+
+## 7. TTS model options (local HF or Qwen)
+
+By default, backend TTS uses local Hugging Face model (`TTS_HF_MODEL`).
+
+You can also use a stronger Qwen TTS endpoint (OpenAI-compatible `/audio/speech`) by setting in root `.env`:
+
+- `TTS_PROVIDER=qwen`
+- `TTS_QWEN_BASE_URL=https://<your-qwen-tts-endpoint>/v1`
+- `TTS_QWEN_MODEL=<your-qwen-tts-model-name>`
+- `TTS_QWEN_API_KEY=<token-if-required>`
+- `TTS_QWEN_VOICE=Cherry` (or another supported voice)
+
+If `TTS_PROVIDER=auto`, backend tries Qwen first (when `TTS_QWEN_BASE_URL` is set) and falls back to local HF TTS.
 
 ## 6. First login
 

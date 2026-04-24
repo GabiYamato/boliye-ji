@@ -1,5 +1,6 @@
 import io
 
+import httpx
 import numpy as np
 import torch
 from scipy.io import wavfile
@@ -48,13 +49,36 @@ def _load() -> None:
     raise RuntimeError("TTS model failed to load (try TTS_DEVICE=cpu)")
 
 
-def synthesize_wav(text: str) -> bytes:
+def _qwen_ready() -> bool:
+    return bool((config.TTS_QWEN_BASE_URL or "").strip())
+
+
+def _qwen_url() -> str:
+    return config.TTS_QWEN_BASE_URL.rstrip("/") + "/audio/speech"
+
+
+def _synthesize_qwen(text: str) -> bytes:
+    headers = {"Content-Type": "application/json"}
+    if config.TTS_QWEN_API_KEY:
+        headers["Authorization"] = f"Bearer {config.TTS_QWEN_API_KEY}"
+
+    payload = {
+        "model": config.TTS_QWEN_MODEL,
+        "input": text,
+        "voice": config.TTS_QWEN_VOICE,
+        "response_format": "wav",
+    }
+
+    with httpx.Client(timeout=90.0) as client:
+        resp = client.post(_qwen_url(), json=payload, headers=headers)
+        resp.raise_for_status()
+        return resp.content
+
+
+def _synthesize_hf(text: str) -> bytes:
     _load()
-    t = text.strip()
-    if not t:
-        raise ValueError("empty text")
     assert _model is not None and _tokenizer is not None and _device is not None
-    inputs = _tokenizer(t, return_tensors="pt")
+    inputs = _tokenizer(text, return_tensors="pt")
     inputs = {k: v.to(_device) for k, v in inputs.items()}
     with torch.no_grad():
         out = _model(**inputs)
@@ -67,3 +91,24 @@ def synthesize_wav(text: str) -> bytes:
     buf = io.BytesIO()
     wavfile.write(buf, sr, pcm)
     return buf.getvalue()
+
+
+def synthesize_wav(text: str) -> bytes:
+    t = text.strip()
+    if not t:
+        raise ValueError("empty text")
+
+    provider = (config.TTS_PROVIDER or "auto").lower().strip()
+    if provider == "qwen":
+        if not _qwen_ready():
+            raise RuntimeError("Qwen TTS provider selected but TTS_QWEN_BASE_URL is not configured")
+        return _synthesize_qwen(t)
+    if provider in ("hf", "vits"):
+        return _synthesize_hf(t)
+
+    if _qwen_ready():
+        try:
+            return _synthesize_qwen(t)
+        except Exception:
+            pass
+    return _synthesize_hf(t)

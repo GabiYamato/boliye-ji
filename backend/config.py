@@ -18,8 +18,15 @@ JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+STT_BACKEND = os.getenv("STT_BACKEND", "whisper")
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", os.path.join(os.path.dirname(__file__), ".chroma"))
 
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto")
 TTS_HF_MODEL = os.getenv("TTS_HF_MODEL", "facebook/mms-tts-eng")
+TTS_QWEN_BASE_URL = os.getenv("TTS_QWEN_BASE_URL", "")
+TTS_QWEN_MODEL = os.getenv("TTS_QWEN_MODEL", "qwen-tts")
+TTS_QWEN_API_KEY = os.getenv("TTS_QWEN_API_KEY", "")
+TTS_QWEN_VOICE = os.getenv("TTS_QWEN_VOICE", "Cherry")
 TTS_DEVICE = os.getenv("TTS_DEVICE", "auto")
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
