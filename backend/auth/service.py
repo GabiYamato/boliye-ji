@@ -54,26 +54,37 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email.lower()).first()
 
 
-def create_email_user(db: Session, email: str, password: str) -> User:
-    u = User(email=email.lower(), hashed_password=hash_password(password), is_google=False)
+def create_email_user(db: Session, email: str, password: str, name: str = "") -> User:
+    u = User(
+        email=email.lower(),
+        name=name.strip(),
+        hashed_password=hash_password(password),
+        is_google=False,
+    )
     db.add(u)
     db.commit()
     db.refresh(u)
     return u
 
 
-def get_or_create_google_user(db: Session, email: str) -> User:
+def get_or_create_google_user(db: Session, email: str, name: str = "") -> User:
     u = get_user_by_email(db, email)
     if u:
         return u
-    u = User(email=email.lower(), hashed_password=None, is_google=True)
+    u = User(
+        email=email.lower(),
+        name=name.strip() or email.split("@")[0],
+        hashed_password=None,
+        is_google=True,
+    )
     db.add(u)
     db.commit()
     db.refresh(u)
     return u
 
 
-def verify_google_token(credential: str) -> str | None:
+def verify_google_token(credential: str) -> dict | None:
+    """Verify Google ID token and return {email, name} or None."""
     if not config.GOOGLE_CLIENT_ID:
         return None
     try:
@@ -83,6 +94,11 @@ def verify_google_token(credential: str) -> str | None:
             config.GOOGLE_CLIENT_ID,
         )
         email = info.get("email")
-        return str(email).lower() if email else None
+        if not email:
+            return None
+        return {
+            "email": str(email).lower(),
+            "name": str(info.get("name", "")),
+        }
     except ValueError:
         return None

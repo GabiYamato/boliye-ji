@@ -1,105 +1,118 @@
-import config
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama, OllamaEmbeddings
-from langchain_qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as qmodels
+"""Conversational agent powered by the pluggable LLM provider.
 
-_client: QdrantClient | None = None
-_vstore: QdrantVectorStore | None = None
-_llm: ChatOllama | None = None
-_rag_ok = False
+Instead of the old RAG pipeline that forgot context every turn, this module
+sends the *full* conversation history (from the DB) to the LLM so it
+naturally remembers income, age, name, and every other detail the user
+already shared.
 
+Scheme data is embedded directly in the system prompt — Gemini's context
+window is large enough and this is far more reliable than the old hash-based
+vector search.
+"""
+from __future__ import annotations
 
-def init_qdrant_collection() -> None:
-    global _client, _rag_ok
-    try:
-        _client = QdrantClient(url=config.QDRANT_URL)
-        _client.get_collections()
-        if not _client.collection_exists(config.QDRANT_COLLECTION):
-            _client.create_collection(
-                collection_name=config.QDRANT_COLLECTION,
-                vectors_config=qmodels.VectorParams(
-                    size=config.QDRANT_EMBED_DIM,
-                    distance=qmodels.Distance.COSINE,
-                ),
-            )
-        _rag_ok = True
-    except Exception:
-        _client = None
-        _rag_ok = False
+from providers.registry import get_llm
+from eligibility.tree_rag import get_scheme_leaves
 
 
-def get_vectorstore() -> QdrantVectorStore | None:
-    global _vstore, _client
-    if not _rag_ok or _client is None:
-        return None
-    if _vstore is None:
-        emb = OllamaEmbeddings(
-            model=config.OLLAMA_EMBED_MODEL,
-            base_url=config.OLLAMA_BASE_URL,
+def _load_scheme_context() -> str:
+    """Build a concise text block describing all available schemes."""
+    leaves = get_scheme_leaves()
+    if not leaves:
+        return "(No scheme data loaded)"
+
+    lines: list[str] = []
+    for leaf in leaves:
+        attrs = leaf.attributes or {}
+        age_range = ""
+        if attrs.get("min_age") is not None or attrs.get("max_age") is not None:
+            lo = attrs.get("min_age", "any")
+            hi = attrs.get("max_age", "any")
+            age_range = f"  Age: {lo}–{hi}\n"
+
+        income = ""
+        if attrs.get("max_income") is not None:
+            income = f"  Max annual income: ₹{attrs['max_income']:,}\n"
+
+        categories = ", ".join(attrs.get("category") or [])
+        steps = "\n".join(f"    • {s}" for s in (attrs.get("next_steps") or []))
+
+        lines.append(
+            f"### {leaf.name}\n"
+            f"  {leaf.description}\n"
+            f"{age_range}"
+            f"{income}"
+            f"  Categories: {categories}\n"
+            f"  Next steps:\n{steps}"
         )
-        _vstore = QdrantVectorStore(
-            client=_client,
-            collection_name=config.QDRANT_COLLECTION,
-            embedding=emb,
-        )
-    return _vstore
+
+    return "\n\n".join(lines)
 
 
-def _get_llm() -> ChatOllama:
-    global _llm
-    if _llm is None:
-        _llm = ChatOllama(
-            model=config.OLLAMA_LLM_MODEL,
-            base_url=config.OLLAMA_BASE_URL,
-            temperature=0.3,
-        )
-    return _llm
+_SCHEME_CONTEXT: str | None = None
 
 
-def _last_user_text(messages: list[dict]) -> str:
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            return str(m.get("content", ""))
-    return ""
+def _get_scheme_context() -> str:
+    global _SCHEME_CONTEXT
+    if _SCHEME_CONTEXT is None:
+        _SCHEME_CONTEXT = _load_scheme_context()
+    return _SCHEME_CONTEXT
 
 
-def _to_lc(messages: list[dict]):
-    out = []
-    for m in messages:
-        r = m.get("role")
-        c = str(m.get("content", ""))
-        if r == "system":
-            out.append(SystemMessage(content=c))
-        elif r == "user":
-            out.append(HumanMessage(content=c))
-        elif r == "assistant":
-            out.append(AIMessage(content=c))
-    return out
+SYSTEM_PROMPT = """\
+You are **Boliye**, a warm, friendly voice-first assistant that helps Indian citizens discover government welfare schemes they may be eligible for.
+
+## Your Personality
+- Speak naturally, like a helpful friend — not a bureaucrat.
+- Keep answers concise (2–4 sentences for voice, a bit more for text).
+- NEVER repeat questions the user already answered. You have full conversation history.
+- If you already know the user's age, income, location, or category from earlier in the conversation, use that — don't ask again.
+- If you need more info to narrow down schemes, ask ONE specific question at a time.
+
+## How to Help
+1. When the user shares details (age, income, occupation, location, category like SC/ST/OBC/General), remember them.
+2. Match their profile against the schemes below.
+3. Recommend eligible schemes with a brief reason and clear next steps.
+4. If multiple schemes match, mention the top 2-3 and offer to explain any in detail.
+5. If no scheme matches, say so honestly and explain what would need to change.
+
+## Important Rules
+- FOCUS ON UX. Be helpful, not pedantic. If the user says "I'm 25, earning 2 lakh", immediately check schemes — don't interrogate them.
+- For voice responses: keep sentences short, avoid bullet points and markdown, use natural spoken language.
+- For text responses: you may use light formatting but keep it readable.
+- Always respond in the same language the user speaks (English or Hindi).
+- You CAN make reasonable assumptions (e.g., if someone says "I'm a farmer" → category is farmer, location is likely rural).
+
+## Available Schemes Database
+{schemes}
+"""
+
+
+def get_system_prompt() -> str:
+    return SYSTEM_PROMPT.format(schemes=_get_scheme_context())
 
 
 def chat_reply(messages: list[dict]) -> str:
-    query = _last_user_text(messages)
-    ctx = ""
-    if query:
-        try:
-            vs = get_vectorstore()
-            if vs:
-                retriever = vs.as_retriever(search_kwargs={"k": 4})
-                docs = retriever.invoke(query)
-                ctx = "\n\n".join(d.page_content for d in docs)
-        except Exception:
-            ctx = ""
-    system = (
-        "You are a helpful assistant. Use the context when relevant; "
-        "if empty, use general knowledge.\n\nContext:\n"
-        + (ctx or "(none)")
-    )
-    msgs = [{"role": "system", "content": system}]
+    """Generate a reply given the full conversation history.
+
+    ``messages`` should be a list of dicts with 'role' and 'content' keys,
+    as stored in the DB. The system prompt is prepended automatically.
+    """
+    llm = get_llm()
+
+    full_messages = [{"role": "system", "content": get_system_prompt()}]
     for m in messages:
-        if m.get("role") in ("user", "assistant") and m.get("content") is not None:
-            msgs.append({"role": m["role"], "content": str(m["content"])})
-    lc = _to_lc(msgs)
-    out = _get_llm().invoke(lc)
-    return str(out.content or "")
+        role = m.get("role", "user")
+        content = str(m.get("content", ""))
+        if role in ("user", "assistant") and content.strip():
+            full_messages.append({"role": role, "content": content})
+
+    try:
+        return llm.chat(full_messages)
+    except Exception as exc:
+        # Fallback: give a useful response instead of crashing
+        return (
+            "I'm having trouble connecting right now. "
+            "Could you try again in a moment? "
+            "In the meantime, you can visit scholarships.gov.in or pmkisan.gov.in for scheme information."
+        )

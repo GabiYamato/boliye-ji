@@ -73,11 +73,12 @@ export function Chat() {
 
   const clearHistory = async () => {
     try {
+      await apiFetch('/api/chat/history', { method: 'DELETE' })
       setMessages([])
       setErr('')
       setLiveTranscript('')
     } catch (e) {
-      console.error('Failed to clear history')
+      console.error('Failed to clear history', e)
     }
   }
 

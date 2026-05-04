@@ -2,12 +2,12 @@
   "root": {
     "id": "root",
     "name": "Government Schemes India",
-    "description": "Eligibility tree for common public schemes",
+    "description": "Eligibility tree for common Indian public welfare schemes",
     "children": [
       {
         "id": "cat-education",
         "name": "Education",
-        "description": "Scholarships and learning support",
+        "description": "Scholarships and educational support",
         "children": [
           {
             "id": "sub-higher-education",
@@ -15,65 +15,37 @@
             "children": [
               {
                 "id": "scheme-post-matric-scholarship",
-                "name": "Post Matric Scholarship",
-                "description": "Scholarship for students pursuing higher education with low family income.",
+                "name": "Post Matric Scholarship for SC/ST",
+                "description": "Central government scholarship for SC/ST students pursuing post-matric education including professional and technical courses. Covers tuition fees, maintenance allowance, and book grants.",
                 "attributes": {
                   "min_age": 16,
-                  "max_age": 30,
-                  "max_income": 300000,
-                  "location": ["india"],
-                  "category": ["student"],
-                  "next_steps": [
-                    "Collect income certificate",
-                    "Keep admission proof ready",
-                    "Apply on the national scholarship portal"
-                  ]
-                }
-              },
-              {
-                "id": "scheme-merit-girl-stem",
-                "name": "Merit STEM Scholarship for Girls",
-                "description": "Support for women students in engineering and science streams.",
-                "attributes": {
-                  "min_age": 17,
-                  "max_age": 28,
-                  "max_income": 800000,
-                  "location": ["india"],
-                  "category": ["student", "female-student"],
-                  "next_steps": [
-                    "Upload previous exam mark sheet",
-                    "Get institution verification",
-                    "Submit application before deadline"
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "cat-welfare",
-        "name": "Income Support",
-        "description": "Direct benefit and subsidy schemes",
-        "children": [
-          {
-            "id": "sub-household-subsidy",
-            "name": "Household Subsidy",
-            "children": [
-              {
-                "id": "scheme-low-income-subsidy",
-                "name": "Low Income Utility Subsidy",
-                "description": "Utility subsidy for low income families in urban and semi-urban locations.",
-                "attributes": {
-                  "min_age": 18,
-                  "max_age": 60,
+                  "max_age": 35,
                   "max_income": 250000,
                   "location": ["india"],
-                  "category": ["household", "worker"],
+                  "category": ["student", "sc", "st"],
                   "next_steps": [
-                    "Provide electricity bill copy",
-                    "Provide bank details for direct transfer",
-                    "Visit district welfare office for verification"
+                    "Get caste certificate from tehsildar",
+                    "Obtain family income certificate",
+                    "Apply on National Scholarship Portal (scholarships.gov.in)",
+                    "Submit institution verification letter"
+                  ]
+                }
+              },
+              {
+                "id": "scheme-pm-vidyalaxmi",
+                "name": "PM Vidyalaxmi (Education Loan Guarantee)",
+                "description": "Government-backed education loan scheme for students admitted to quality higher education institutions. Provides collateral-free loans up to 10 lakh with interest subvention for economically weaker families.",
+                "attributes": {
+                  "min_age": 17,
+                  "max_age": 30,
+                  "max_income": 800000,
+                  "location": ["india"],
+                  "category": ["student", "general", "obc", "sc", "st"],
+                  "next_steps": [
+                    "Secure admission in a recognized institution",
+                    "Apply through PM Vidyalaxmi portal",
+                    "Submit income proof and admission letter",
+                    "Bank will process collateral-free loan"
                   ]
                 }
               }
@@ -82,45 +54,169 @@
         ]
       },
       {
-        "id": "cat-rural",
-        "name": "Rural Development",
-        "description": "Support for rural livelihoods and infrastructure",
+        "id": "cat-income-welfare",
+        "name": "Income Support & Welfare",
+        "description": "Direct benefit transfer and subsidy schemes for low-income families",
         "children": [
           {
-            "id": "sub-rural-livelihood",
-            "name": "Rural Livelihood",
+            "id": "sub-direct-benefit",
+            "name": "Direct Benefit",
             "children": [
               {
-                "id": "scheme-rural-enterprise-grant",
-                "name": "Rural Micro Enterprise Grant",
-                "description": "Seed funding support for rural youth and self-help groups starting small enterprises.",
+                "id": "scheme-pm-kisan",
+                "name": "PM-KISAN (Pradhan Mantri Kisan Samman Nidhi)",
+                "description": "Direct income support of Rs 6,000 per year in three installments to small and marginal farmer families. Covers all landholding farmers across India.",
                 "attributes": {
-                  "min_age": 21,
-                  "max_age": 45,
-                  "max_income": 500000,
-                  "location": ["india", "rural"],
-                  "category": ["rural", "entrepreneur", "worker"],
+                  "min_age": 18,
+                  "max_age": 70,
+                  "max_income": 600000,
+                  "location": ["india", "rural", "semi-urban"],
+                  "category": ["farmer", "rural", "general", "obc", "sc", "st"],
                   "next_steps": [
-                    "Prepare one-page business idea",
-                    "Obtain panchayat residence certificate",
-                    "Submit application to block development office"
+                    "Verify land records are updated",
+                    "Register on PM-KISAN portal (pmkisan.gov.in)",
+                    "Link Aadhaar with bank account",
+                    "Submit application through village patwari or CSC center"
                   ]
                 }
               },
               {
-                "id": "scheme-rural-housing-support",
-                "name": "Rural Housing Support",
-                "description": "Housing support for low income rural families.",
+                "id": "scheme-ujjwala",
+                "name": "Pradhan Mantri Ujjwala Yojana",
+                "description": "Free LPG gas connections for women from Below Poverty Line families. Provides a deposit-free LPG connection with a financial assistance of Rs 1,600.",
                 "attributes": {
                   "min_age": 18,
                   "max_age": 65,
-                  "max_income": 350000,
+                  "max_income": 200000,
                   "location": ["india", "rural"],
-                  "category": ["household", "rural"],
+                  "category": ["household", "bpl", "rural", "general", "obc", "sc", "st"],
                   "next_steps": [
-                    "Get land ownership or consent documents",
-                    "Get family income certificate",
-                    "Apply through gram panchayat portal"
+                    "Get BPL ration card or SECC list proof",
+                    "Visit nearest LPG distributor",
+                    "Submit Aadhaar and bank passbook copy",
+                    "Connection will be issued in woman's name"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cat-employment",
+        "name": "Employment & Skill Development",
+        "description": "Job creation, skill training, and entrepreneurship support",
+        "children": [
+          {
+            "id": "sub-self-employment",
+            "name": "Self Employment",
+            "children": [
+              {
+                "id": "scheme-mudra",
+                "name": "Pradhan Mantri MUDRA Yojana",
+                "description": "Micro-loans up to Rs 10 lakh for small business and entrepreneurship. Three categories: Shishu (up to 50K), Kishore (50K-5L), Tarun (5L-10L). No collateral required.",
+                "attributes": {
+                  "min_age": 18,
+                  "max_age": 60,
+                  "max_income": 1000000,
+                  "location": ["india"],
+                  "category": ["entrepreneur", "worker", "general", "obc", "sc", "st"],
+                  "next_steps": [
+                    "Prepare a simple business plan",
+                    "Visit any bank, NBFC, or MFI",
+                    "Submit ID proof, address proof, and business details",
+                    "No collateral needed for loans up to 10 lakh"
+                  ]
+                }
+              },
+              {
+                "id": "scheme-pmegp",
+                "name": "PMEGP (PM Employment Generation Programme)",
+                "description": "Credit-linked subsidy for setting up new micro-enterprises. Subsidy ranges from 15-35% of project cost. Maximum project cost: Rs 50 lakh for manufacturing, Rs 20 lakh for services.",
+                "attributes": {
+                  "min_age": 18,
+                  "max_age": 45,
+                  "max_income": 500000,
+                  "location": ["india", "rural", "urban"],
+                  "category": ["entrepreneur", "worker", "rural", "general", "obc", "sc", "st"],
+                  "next_steps": [
+                    "Prepare detailed project report",
+                    "Apply online through KVIC portal (kviconline.gov.in)",
+                    "Undergo EDP training program",
+                    "Bank will disburse loan with government subsidy margin"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "sub-skill",
+            "name": "Skill Training",
+            "children": [
+              {
+                "id": "scheme-pmkvy",
+                "name": "PMKVY (Pradhan Mantri Kaushal Vikas Yojana)",
+                "description": "Free skill training and certification for Indian youth. Provides industry-relevant training in 300+ job roles with Rs 8,000 reward on certification.",
+                "attributes": {
+                  "min_age": 15,
+                  "max_age": 45,
+                  "max_income": 500000,
+                  "location": ["india"],
+                  "category": ["student", "worker", "general", "obc", "sc", "st", "rural"],
+                  "next_steps": [
+                    "Find nearest PMKVY training center on skillindia.gov.in",
+                    "Enroll with Aadhaar and basic documents",
+                    "Complete training course (150-300 hours)",
+                    "Pass assessment to get government certificate and reward"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cat-housing",
+        "name": "Housing",
+        "description": "Affordable housing schemes for rural and urban areas",
+        "children": [
+          {
+            "id": "sub-housing-schemes",
+            "name": "Housing Schemes",
+            "children": [
+              {
+                "id": "scheme-pmay-gramin",
+                "name": "PMAY-Gramin (Pradhan Mantri Awas Yojana - Rural)",
+                "description": "Financial assistance for construction of pucca houses for rural homeless and those living in kutcha/dilapidated houses. Provides Rs 1.20 lakh in plains and Rs 1.30 lakh in hilly areas.",
+                "attributes": {
+                  "min_age": 18,
+                  "max_age": 65,
+                  "max_income": 300000,
+                  "location": ["india", "rural"],
+                  "category": ["household", "rural", "bpl", "general", "obc", "sc", "st"],
+                  "next_steps": [
+                    "Check eligibility on PMAY-G website (pmayg.nic.in)",
+                    "Ensure name appears in SECC 2011 data",
+                    "Apply through gram panchayat or block office",
+                    "Construction must be completed within 12 months"
+                  ]
+                }
+              },
+              {
+                "id": "scheme-pmay-urban",
+                "name": "PMAY-Urban (Pradhan Mantri Awas Yojana - Urban)",
+                "description": "Interest subsidy on home loans for urban poor and middle-income groups. Credit-Linked Subsidy of 3-6.5% on home loans for EWS, LIG, and MIG categories.",
+                "attributes": {
+                  "min_age": 21,
+                  "max_age": 65,
+                  "max_income": 1800000,
+                  "location": ["india", "urban"],
+                  "category": ["household", "worker", "ews", "lig", "mig", "general", "obc", "sc", "st"],
+                  "next_steps": [
+                    "Check eligibility on pmaymis.gov.in",
+                    "Apply through any scheduled bank or housing finance company",
+                    "Submit income certificate and Aadhaar",
+                    "Interest subsidy credited directly to loan account"
                   ]
                 }
               }

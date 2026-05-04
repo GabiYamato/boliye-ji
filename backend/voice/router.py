@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from auth.db import SessionLocal
 from auth.deps import get_current_user
 from auth.models import User, ChatMessage
-from eligibility.profile_extract import infer_profile_from_query
-from eligibility.service import run_eligibility_pipeline
+from chat.rag import chat_reply
 from voice.stt import transcribe_with_meta
 from voice.tts import synthesize_wav
 
@@ -65,17 +64,12 @@ async def voice_transcribe_chunk(
         raise HTTPException(status_code=500, detail="Audio transcription failed") from exc
 
     text = str(meta.get("text") or "").strip()
-    pipeline = run_eligibility_pipeline(
-        raw_text=text,
-        profile=infer_profile_from_query(text),
-        confidence=float(meta.get("confidence") or 0.0),
-    )
 
     return {
-        "transcript": pipeline.raw_transcript,
-        "raw_transcript": pipeline.raw_transcript,
-        "cleaned_query": pipeline.cleaned_query,
-        "confidence": pipeline.confidence,
+        "transcript": text,
+        "raw_transcript": text,
+        "cleaned_query": text,
+        "confidence": float(meta.get("confidence") or 0.0),
     }
 
 
@@ -86,35 +80,43 @@ async def voice_process(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Full voice pipeline: STT → LLM (with history) → TTS.
+
+    The key improvement: we load full conversation history from the DB
+    so the LLM remembers everything the user previously said.
+    """
     whisper_model = _require_whisper()
 
     raw = await audio.read()
     suf = _suffix_from_filename(audio.filename or "")
     meta = transcribe_with_meta(whisper_model, raw, suf)
-    user_text = str(meta["text"])
+    user_text = str(meta["text"]).strip()
     if not user_text:
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
-
-    _load_history(messages)
 
     # Store user message
     db_user_msg = ChatMessage(user_id=user.id, role="user", content=user_text)
     db.add(db_user_msg)
     db.commit()
 
-    profile = infer_profile_from_query(user_text)
-    pipeline = run_eligibility_pipeline(
-        raw_text=user_text,
-        profile=profile,
-        confidence=float(meta["confidence"]),
+    # Load FULL conversation history from DB
+    db_msgs = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.user_id == user.id)
+        .order_by(ChatMessage.id.asc())
+        .all()
     )
-    reply_text = pipeline.tts_text
+    history = [{"role": m.role, "content": m.content} for m in db_msgs]
+
+    # Generate reply with full conversation context
+    reply_text = chat_reply(history)
 
     # Store assistant message
     db_asst_msg = ChatMessage(user_id=user.id, role="assistant", content=reply_text)
     db.add(db_asst_msg)
     db.commit()
 
+    # Synthesize speech
     try:
         audio_bytes = await asyncio.to_thread(synthesize_wav, reply_text)
     except Exception as exc:
@@ -122,12 +124,10 @@ async def voice_process(
 
     return {
         "transcript": user_text,
-        "reply": pipeline.response_text,
-        "tts_text": pipeline.tts_text,
-        "confidence": pipeline.confidence,
-        "cleaned_query": pipeline.cleaned_query,
-        "eligibility": pipeline.eligibility.model_dump(),
-        "retrieved_context": pipeline.retrieved_context,
+        "reply": reply_text,
+        "tts_text": reply_text,
+        "confidence": float(meta.get("confidence", 0.0)),
+        "cleaned_query": user_text,
         "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
         "audio_mime": "audio/wav",
     }

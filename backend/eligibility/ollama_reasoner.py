@@ -1,13 +1,13 @@
+"""Spoken eligibility response generator using the pluggable LLM provider.
+
+Replaces the old ollama_reasoner.py that was hardcoded to Ollama.
+"""
 from __future__ import annotations
 
 import json
 
-import config
-from langchain_ollama import ChatOllama
-
+from providers.registry import get_llm
 from eligibility.models import EligibilityResult, UserProfile
-
-_llm: ChatOllama | None = None
 
 
 SYSTEM_PROMPT = """
@@ -24,17 +24,6 @@ Rules:
 """.strip()
 
 
-def _get_llm() -> ChatOllama:
-    global _llm
-    if _llm is None:
-        _llm = ChatOllama(
-            model=config.OLLAMA_LLM_MODEL,
-            base_url=config.OLLAMA_BASE_URL,
-            temperature=0.2,
-        )
-    return _llm
-
-
 def generate_spoken_eligibility_response(
     profile: UserProfile,
     query: str,
@@ -48,18 +37,19 @@ def generate_spoken_eligibility_response(
     }
 
     messages = [
-        ("system", SYSTEM_PROMPT),
-        ("human", json.dumps(payload, ensure_ascii=False)),
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
 
     try:
-        out = _get_llm().invoke(messages)
-        text = str(out.content or "").strip()
+        llm = get_llm()
+        text = llm.chat(messages)
         if text:
             return text
     except Exception:
         pass
 
+    # Fallback if LLM fails
     if not eligibility.eligible_schemes:
         return (
             "I could not find a matching scheme right now. "
