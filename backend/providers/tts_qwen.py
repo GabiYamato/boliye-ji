@@ -20,10 +20,34 @@ class QwenTTSProvider(TTSProvider):
             raise RuntimeError(
                 "TTS_QWEN_BASE_URL must be set when using the Qwen TTS provider"
             )
+        self._base = base
         self._url = f"{base}/v1/audio/speech"
         self._model = config.TTS_QWEN_MODEL or "qwen3-tts"
         self._voice = config.TTS_QWEN_VOICE or "Vivian"
         self._api_key = config.TTS_QWEN_API_KEY or "not-needed"
+
+        # Probe the server -- fail fast so the registry can fall back
+        self._probe()
+
+    def _probe(self) -> None:
+        """Quick connectivity check during init."""
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                # Try common endpoints
+                for ep in ["/v1/models", "/health", "/"]:
+                    try:
+                        r = client.get(f"{self._base}{ep}")
+                        if r.status_code < 500:
+                            return  # Server is reachable
+                    except httpx.HTTPError:
+                        continue
+                # If we get here, nothing worked but no connection error
+                return
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise RuntimeError(
+                f"Qwen3-TTS server not reachable at {self._base} -- "
+                "is it running? See docs/qwen-tts-setup.md"
+            ) from exc
 
     # ------------------------------------------------------------------
     def synthesize(self, text: str) -> bytes:

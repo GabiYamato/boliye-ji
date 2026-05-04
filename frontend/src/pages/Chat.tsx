@@ -276,10 +276,15 @@ export function Chat() {
         const asstMsg: Msg = { role: 'assistant', content: data.reply }
         setMessages((prev) => [...prev, userMsg, asstMsg])
         setLiveTranscript(data.reply)
-        setVoicePhase('speaking')
+        
         if (!sessionActiveRef.current) return
-        const audioBlob = decodeAudio(String(data.audio_base64), String(data.audio_mime || 'audio/wav'))
-        await playWithMeter(audioBlob)
+
+        // Play TTS audio if available, otherwise skip playback
+        if (data.audio_base64) {
+          setVoicePhase('speaking')
+          const audioBlob = decodeAudio(String(data.audio_base64), String(data.audio_mime || 'audio/wav'))
+          await playWithMeter(audioBlob)
+        }
         
         if (sessionActiveRef.current) {
           // Update the ref immediately before recursively calling startVoice
@@ -477,16 +482,16 @@ export function Chat() {
             </div>
           </div>
         </div>
+        {voiceOpen ? (
+          <VoiceScreen
+            phase={voicePhase}
+            transcript={liveTranscript}
+            level={voiceLevel}
+            onCancel={cancelVoice}
+            onStop={stopListeningNow}
+          />
+        ) : null}
       </div>
-      {voiceOpen ? (
-        <VoiceScreen
-          phase={voicePhase}
-          transcript={liveTranscript}
-          level={voiceLevel}
-          onCancel={cancelVoice}
-          onStop={stopListeningNow}
-        />
-      ) : null}
     </div>
   )
 }

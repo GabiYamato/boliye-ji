@@ -1,92 +1,110 @@
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 
 export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking'
-
-const phaseLabel = (phase: VoicePhase) => {
-  if (phase === 'listening') return 'listening'
-  if (phase === 'thinking') return 'thinking'
-  if (phase === 'speaking') return 'speaking'
-  return 'idle'
-}
-
-const seeded = (n: number) => {
-  const x = Math.sin(n * 9127.133) * 43758.5453
-  return x - Math.floor(x)
-}
 
 export function VoiceOrb({
   phase,
   level = 0.15,
-  size = 'h-28 w-28',
 }: {
   phase: VoicePhase
   level?: number
-  size?: string
+  size?: string // Ignored now but kept for prop compat
 }) {
-  const amp = Math.max(0.06, Math.min(1, level))
-  const scale = 0.94 + amp * 0.2
-  const spin = phase === 'thinking' ? 5.6 : phase === 'speaking' ? 9 : 12
+  const active = phase !== 'idle'
+  const isSpeaking = phase === 'speaking'
+  const isThinking = phase === 'thinking'
+  const isListening = phase === 'listening'
 
-  const points = useMemo(() => {
-    const out: Array<{ x: number; y: number; r: number; o: number; delay: number; dur: number }> = []
-    const count = 880
-    for (let i = 0; i < count; i++) {
-      const a = 2 * Math.PI * seeded(i + 1)
-      const b = Math.acos(2 * seeded(i + 2) - 1)
-      const shell = 0.72 + seeded(i + 3) * 0.28
-      const x = Math.sin(b) * Math.cos(a) * shell
-      const y = Math.sin(b) * Math.sin(a) * shell
-      const z = Math.cos(b) * shell
-      const perspective = 0.78 + (z + 1) * 0.2
-      out.push({
-        x: x * 88,
-        y: y * 88,
-        r: 0.45 + perspective * (0.75 + seeded(i + 5) * 0.8),
-        o: 0.14 + perspective * (0.34 + seeded(i + 6) * 0.5),
-        delay: seeded(i + 8) * 2.2,
-        dur: 1.6 + seeded(i + 7) * 2.8,
+  // Smooth level for animation
+  const [smoothedLevel, setSmoothedLevel] = useState(level)
+
+  useEffect(() => {
+    let animationFrame: number
+    const updateLevel = () => {
+      setSmoothedLevel((prev) => {
+        const diff = level - prev
+        const easing = diff > 0 ? 0.4 : 0.15 
+        return prev + diff * easing
       })
+      animationFrame = requestAnimationFrame(updateLevel)
     }
-    return out
-  }, [])
+    animationFrame = requestAnimationFrame(updateLevel)
+    return () => cancelAnimationFrame(animationFrame)
+  }, [level])
 
+  const intensity = Math.min(smoothedLevel, 1)
+  
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div
-        className={`relative overflow-hidden rounded-full transition duration-150 ${size}`}
-        style={{
-          transform: `scale(${scale})`,
-          boxShadow: `0 0 ${20 + amp * 32}px rgba(117, 220, 255, ${0.18 + amp * 0.18})`,
-          background:
-            'radial-gradient(circle at 30% 25%, rgba(153,225,255,0.10), rgba(4,9,15,0.02) 55%, rgba(0,0,0,0) 72%)',
-        }}
-      >
-        <svg
-          className="h-full w-full"
-          viewBox="-110 -110 220 220"
-          aria-label={`voice orb ${phaseLabel(phase)}`}
-          role="img"
+    <>
+      <style>{`
+        @keyframes aura-float-1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(8%, -10%) scale(1.05); }
+        }
+        @keyframes aura-float-2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-8%, -12%) scale(1.02); }
+        }
+        @keyframes aura-float-3 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(3%, 8%) scale(1.08); }
+        }
+        .aura-anim-1 { animation: aura-float-1 4s ease-in-out infinite; }
+        .aura-anim-2 { animation: aura-float-2 5s ease-in-out infinite; }
+        .aura-anim-3 { animation: aura-float-3 3.5s ease-in-out infinite; }
+      `}</style>
+
+      <div className="absolute bottom-0 left-[-20%] right-[-20%] h-[60vh] pointer-events-none z-0 flex items-end justify-center">
+        <div 
+          className="relative w-full max-w-5xl h-full"
           style={{
-            animation: `orbSpin ${spin}s linear infinite`,
-            transformOrigin: 'center',
+            filter: 'blur(80px)',
+            opacity: active ? 0.8 + intensity * 0.2 : 0.0,
+            transform: `scaleY(${1 + intensity * 0.6}) translateY(${active ? '10%' : '60%'})`,
+            transition: 'opacity 0.6s ease, transform 0.2s ease-out',
           }}
         >
-          {points.map((p, idx) => (
-            <circle
-              key={idx}
-              cx={p.x}
-              cy={p.y}
-              r={p.r}
-              fill="rgba(230,245,255,0.98)"
-              style={{
-                opacity: p.o,
-                animation: `orbTwinkle ${p.dur}s ease-in-out ${p.delay}s infinite`,
-              }}
-            />
-          ))}
-        </svg>
+          {/* Deep Blue Base */}
+          <div 
+            className="absolute bottom-[-10%] left-[-10%] w-[70%] h-[80%] transition-all duration-500 ease-out"
+            style={{
+              transform: `scale(${isListening ? 1.2 : 1 + intensity * 0.2}) translateX(${isThinking ? '20%' : '0'})`,
+            }}
+          >
+            <div className={`w-full h-full rounded-full bg-[#0070F3] mix-blend-screen ${isThinking || isListening ? 'aura-anim-1' : ''}`} />
+          </div>
+          
+          {/* Right Purple/Pink */}
+          <div 
+            className="absolute bottom-[-10%] right-[-10%] w-[70%] h-[70%] transition-all duration-500 ease-out"
+            style={{
+              transform: `scale(${isThinking ? 1.3 : 1 + intensity * 0.3}) translateX(${isListening ? '-20%' : '0'})`,
+            }}
+          >
+            <div className={`w-full h-full rounded-full bg-[#9d4edd] mix-blend-screen ${isThinking || isListening ? 'aura-anim-2' : ''}`} />
+          </div>
+
+          {/* Center Cyan Highlight for speaking */}
+          <div 
+            className="absolute bottom-[0%] left-[15%] right-[15%] h-[60%] transition-all duration-100 ease-out"
+            style={{
+              transform: `scaleY(${1 + intensity * 2.5}) scaleX(${1 + intensity * 0.8})`,
+              opacity: isSpeaking ? 0.8 + intensity * 0.2 : (isListening ? 0.3 : 0),
+            }}
+          >
+            <div className={`w-full h-full rounded-full bg-[#48cae4] mix-blend-screen ${isThinking || isListening ? 'aura-anim-3' : ''}`} />
+          </div>
+          
+          {/* Extra Bright Core for high volume */}
+          <div 
+            className="absolute bottom-[5%] left-[25%] right-[25%] h-[40%] rounded-full bg-white mix-blend-overlay transition-all duration-75 ease-out"
+            style={{
+              transform: `scaleY(${intensity * 3})`,
+              opacity: isSpeaking ? intensity * 0.8 : 0,
+            }}
+          />
+        </div>
       </div>
-      <span className="text-[10px] uppercase tracking-[0.18em] text-[#6d94a8]">{phaseLabel(phase)}</span>
-    </div>
+    </>
   )
 }

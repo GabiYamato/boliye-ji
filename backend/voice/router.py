@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -12,6 +13,8 @@ from auth.models import User, ChatMessage
 from chat.rag import chat_reply
 from voice.stt import transcribe_with_meta
 from voice.tts import synthesize_wav
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -26,18 +29,6 @@ def get_db():
 def _suffix_from_filename(name: str) -> str:
     p = Path(name or "")
     return p.suffix if p.suffix else ".webm"
-
-
-def _load_history(messages: str | None) -> list[dict]:
-    if not messages:
-        return []
-    try:
-        hist = json.loads(messages)
-        if not isinstance(hist, list):
-            raise ValueError
-        return hist
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid messages JSON") from exc
 
 
 def _require_whisper():
@@ -80,7 +71,7 @@ async def voice_process(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Full voice pipeline: STT → LLM (with history) → TTS.
+    """Full voice pipeline: STT -> LLM (with history) -> TTS.
 
     The key improvement: we load full conversation history from the DB
     so the LLM remembers everything the user previously said.
@@ -116,11 +107,15 @@ async def voice_process(
     db.add(db_asst_msg)
     db.commit()
 
-    # Synthesize speech
+    # Synthesize speech -- gracefully degrade if TTS fails
+    audio_b64 = ""
+    audio_mime = "audio/wav"
     try:
         audio_bytes = await asyncio.to_thread(synthesize_wav, reply_text)
+        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="TTS service unavailable") from exc
+        log.error("TTS synthesis failed: %s", exc, exc_info=True)
+        # Don't crash the request -- return the text reply without audio
 
     return {
         "transcript": user_text,
@@ -128,6 +123,6 @@ async def voice_process(
         "tts_text": reply_text,
         "confidence": float(meta.get("confidence", 0.0)),
         "cleaned_query": user_text,
-        "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
-        "audio_mime": "audio/wav",
+        "audio_base64": audio_b64,
+        "audio_mime": audio_mime,
     }
