@@ -3,13 +3,11 @@ from datetime import datetime, timedelta, timezone
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy.orm import Session
 
 import config
 from auth.models import User
-
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def password_supported_by_bcrypt(p: str) -> bool:
@@ -20,15 +18,15 @@ def password_supported_by_bcrypt(p: str) -> bool:
 def hash_password(p: str) -> str:
     if not password_supported_by_bcrypt(p):
         raise ValueError("Password is too long for bcrypt")
-    return pwd.hash(p)
+    return bcrypt.hashpw(p.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(p: str, hashed: str) -> bool:
     if not password_supported_by_bcrypt(p):
         return False
     try:
-        return pwd.verify(p, hashed)
-    except ValueError:
+        return bcrypt.checkpw(p.encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
         return False
 
 

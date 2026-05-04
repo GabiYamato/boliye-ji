@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
 python-jose[cryptography]
-passlib[bcrypt]
 bcrypt
 python-multipart
 # pip install openai-whisper --no-build-isolation
