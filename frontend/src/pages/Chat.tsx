@@ -1,5 +1,5 @@
 import { MessageCircle, Plus, MessageSquare, LogOut, Mic, ArrowRight } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearToken, getToken } from '../api'
 import type { VoicePhase } from '../components/VoiceOrb'
@@ -39,6 +39,10 @@ export function Chat() {
   const [liveTranscript, setLiveTranscript] = useState('')
   const [voiceLevel, setVoiceLevel] = useState(0.08)
   const [err, setErr] = useState('')
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  const [sessionId, setSessionId] = useState<string>('default')
+  const [sessions, setSessions] = useState<{id: string, preview: string}[]>([])
 
   const recRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -54,39 +58,66 @@ export function Chat() {
   const sessionActiveRef = useRef(false)
   const messagesRef = useRef<Msg[]>([])
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const fillerAudioCtxRef = useRef<AudioContext | null>(null)
+  const fillerSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const progressTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     messagesRef.current = messages
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, liveTranscript, err])
 
-  const fetchHistory = async () => {
+  // ── History helpers ──────────────────────────────────────────
+  const fetchSessions = useCallback(async () => {
     try {
-      const data = await apiFetch('/api/chat/history', { method: 'GET' })
+      const data = await apiFetch('/api/chat/sessions', { method: 'GET' })
+      if (Array.isArray(data)) {
+        setSessions(data)
+        if (data.length > 0 && sessionId === 'default') {
+          setSessionId(data[0].id)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load sessions', e)
+    }
+  }, [sessionId])
+
+  const fetchHistory = useCallback(async (sid: string) => {
+    setHistoryLoaded(false)
+    try {
+      const data = await apiFetch(`/api/chat/history?session_id=${sid}`, { method: 'GET' })
       if (Array.isArray(data)) {
         setMessages(data)
+        messagesRef.current = data
       }
     } catch (e) {
       console.error('Failed to load history', e)
+    } finally {
+      setHistoryLoaded(true)
     }
-  }
+  }, [])
 
-  const clearHistory = async () => {
-    try {
-      await apiFetch('/api/chat/history', { method: 'DELETE' })
-      setMessages([])
-      setErr('')
-      setLiveTranscript('')
-    } catch (e) {
-      console.error('Failed to clear history', e)
-    }
+  const createNewThread = () => {
+    setSessionId(crypto.randomUUID())
+    setMessages([])
+    messagesRef.current = []
+    setErr('')
+    setLiveTranscript('')
   }
 
   useEffect(() => {
     if (getToken()) {
-      void fetchHistory()
+      void fetchSessions()
+    } else {
+      setHistoryLoaded(true)
     }
-  }, [])
+  }, [fetchSessions])
+
+  useEffect(() => {
+    if (getToken()) {
+      void fetchHistory(sessionId)
+    }
+  }, [sessionId, fetchHistory])
 
   const logout = () => {
     clearToken()
@@ -99,6 +130,7 @@ export function Chat() {
     setErr('')
     const next: Msg[] = [...messages, { role: 'user', content: text }]
     setMessages(next)
+    messagesRef.current = next
     setInput('')
     setLoading(true)
     try {
@@ -106,10 +138,14 @@ export function Chat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          session_id: sessionId,
           messages: next.map((m) => ({ role: m.role, content: m.content })),
         }),
       })
-      setMessages([...next, { role: 'assistant', content: data.reply }])
+      const updated = [...next, { role: 'assistant' as const, content: data.reply }]
+      setMessages(updated)
+      messagesRef.current = updated
+      void fetchSessions()
     } catch (x) {
       setErr(x instanceof Error ? x.message : 'request failed')
     } finally {
@@ -117,6 +153,82 @@ export function Chat() {
     }
   }
 
+  // ── Filler audio helpers ────────────────────────────────────
+  const stopFillerAudio = () => {
+    if (fillerSourceRef.current) {
+      try { fillerSourceRef.current.stop() } catch { /* ignore */ }
+      fillerSourceRef.current = null
+    }
+    if (fillerAudioCtxRef.current) {
+      try { void fillerAudioCtxRef.current.close() } catch { /* ignore */ }
+      fillerAudioCtxRef.current = null
+    }
+  }
+
+  const stopProgressTimer = () => {
+    if (progressTimerRef.current) {
+      window.clearInterval(progressTimerRef.current)
+      progressTimerRef.current = null
+    }
+    setLoadingProgress(0)
+  }
+
+  const startProgressTimer = () => {
+    stopProgressTimer()
+    setLoadingProgress(0)
+    let progress = 0
+    progressTimerRef.current = window.setInterval(() => {
+      // Ease towards ~90% and slow down as it gets higher
+      progress += (92 - progress) * 0.02
+      setLoadingProgress(Math.min(92, progress))
+    }, 100)
+  }
+
+  const playFillerDuringThinking = async () => {
+    try {
+      const data = await apiFetch('/api/voice/filler', { method: 'GET' })
+      if (!data.audio_base64 || !sessionActiveRef.current) return
+
+      // Show filler text
+      if (data.text) setLiveTranscript(data.text)
+
+      const audioBlob = decodeAudio(data.audio_base64, data.audio_mime || 'audio/wav')
+      const ac = new AudioContext()
+      fillerAudioCtxRef.current = ac
+      const arrBuf = await audioBlob.arrayBuffer()
+      const buff = await ac.decodeAudioData(arrBuf)
+      const source = ac.createBufferSource()
+      const analyser = ac.createAnalyser()
+      analyser.fftSize = 256
+      source.buffer = buff
+      source.connect(analyser)
+      analyser.connect(ac.destination)
+      fillerSourceRef.current = source
+
+      // Level metering for the voice orb
+      const probe = new Uint8Array(analyser.frequencyBinCount)
+      const meter = window.setInterval(() => {
+        analyser.getByteTimeDomainData(probe)
+        let s = 0
+        for (let i = 0; i < probe.length; i++) {
+          const n = (probe[i] - 128) / 128
+          s += n * n
+        }
+        const rms = Math.sqrt(s / probe.length)
+        setVoiceLevel(Math.min(1, rms * 8 + 0.05))
+      }, 80)
+
+      source.onended = () => {
+        window.clearInterval(meter)
+        fillerSourceRef.current = null
+      }
+      source.start(0)
+    } catch (e) {
+      console.warn('Filler audio failed:', e)
+    }
+  }
+
+  // ── Level metering ──────────────────────────────────────────
   const stopLevelMeter = () => {
     if (levelTimerRef.current) {
       window.clearInterval(levelTimerRef.current)
@@ -166,6 +278,8 @@ export function Chat() {
       streamRef.current = null
     }
     stopLevelMeter()
+    stopFillerAudio()
+    stopProgressTimer()
     transcribingRef.current = false
   }
 
@@ -249,6 +363,7 @@ export function Chat() {
     recorderMimeRef.current = recorderMime
     const rec = new MediaRecorder(stream, { mimeType: recorderMime })
     recRef.current = rec
+    // Stop auto-transcribing chunks when paused
     rec.ondataavailable = async (e) => {
       if (e.data.size) chunksRef.current.push(e.data)
       if (phaseRef.current === 'listening') {
@@ -257,6 +372,8 @@ export function Chat() {
         await transcribeChunk(progressive, ext)
       }
     }
+    
+    // rec.onstop is now ONLY called when we actually want to submit the audio
     rec.onstop = async () => {
       stopLevelMeter()
       const blob = new Blob(chunksRef.current, { type: recorderMimeRef.current })
@@ -269,9 +386,29 @@ export function Chat() {
         'messages',
         JSON.stringify(messagesRef.current.map((m) => ({ role: m.role, content: m.content }))),
       )
+      fd.append('session_id', sessionId)
+      
+      // Pass the potentially edited transcript!
+      if (transcriptRef.current) {
+        fd.append('override_text', transcriptRef.current)
+      }
+
+      // Start filler audio and progress bar during thinking phase
+      setVoicePhase('thinking')
+      startProgressTimer()
+      void playFillerDuringThinking()
       
       try {
         const data = await apiFetch('/api/voice/process', { method: 'POST', body: fd })
+
+        // Stop filler and snap progress to 100%
+        stopFillerAudio()
+        stopProgressTimer()
+        setLoadingProgress(100)
+        // Brief pause to show completion, then reset
+        await new Promise(r => setTimeout(r, 300))
+        setLoadingProgress(0)
+
         const userMsg: Msg = { role: 'user', content: data.transcript }
         const asstMsg: Msg = { role: 'assistant', content: data.reply }
         setMessages((prev) => [...prev, userMsg, asstMsg])
@@ -288,12 +425,14 @@ export function Chat() {
         
         if (sessionActiveRef.current) {
           // Update the ref immediately before recursively calling startVoice
-          // so the next iteration has the updated state even if React hasn't re-rendered yet.
           messagesRef.current = [...messagesRef.current, userMsg, asstMsg]
           setLoading(false)
+          void fetchSessions()
           startVoice()
         }
       } catch (x) {
+        stopFillerAudio()
+        stopProgressTimer()
         setVoicePhase('idle')
         setVoiceOpen(false)
         sessionActiveRef.current = false
@@ -304,17 +443,19 @@ export function Chat() {
     }
     setLoading(true)
     rec.start(700)
-    stopTimerRef.current = window.setTimeout(() => {
-      if (!recRef.current || recRef.current.state === 'inactive') return
-      setVoicePhase('thinking')
-      recRef.current.stop()
-      recRef.current = null
-    }, 7600)
+    // REMOVED 7.6s AUTO-TIMEOUT to allow natural pauses
   }
 
-  const stopListeningNow = () => {
+  const pauseListeningNow = () => {
     if (!recRef.current || recRef.current.state === 'inactive') return
-    setVoicePhase('thinking')
+    // Pause the recorder so we can gather the chunks later when they hit Send
+    recRef.current.pause()
+    setVoicePhase('reviewing') // Custom state for editing
+  }
+
+  const sendListeningNow = () => {
+    if (!recRef.current || recRef.current.state === 'inactive') return
+    // This will trigger rec.onstop and submit the form
     recRef.current.stop()
     recRef.current = null
   }
@@ -340,6 +481,18 @@ export function Chat() {
     }
   }, [])
 
+  // ── Derive sidebar conversation summary ─────────────────────
+  const conversationPreview = useMemo(() => {
+    if (messages.length === 0) return null
+    // Use the first user message as the thread title
+    const firstUser = messages.find((m) => m.role === 'user')
+    if (firstUser) {
+      const text = firstUser.content
+      return text.length > 40 ? text.slice(0, 40) + '…' : text
+    }
+    return 'Current conversation'
+  }, [messages])
+
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-[#111113] text-zinc-100 font-sans">
       {/* Sidebar */}
@@ -352,7 +505,7 @@ export function Chat() {
         </div>
         
         <button
-          onClick={() => void clearHistory()}
+          onClick={() => void createNewThread()}
           className="mb-6 flex w-full items-center justify-between rounded-full border border-zinc-700/50 bg-[#2A2A2C]/50 px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
         >
           <div className="flex items-center gap-2">
@@ -364,11 +517,29 @@ export function Chat() {
 
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
           <div className="mb-2 px-2 text-xs font-semibold tracking-wider text-zinc-500">History</div>
-          {messages.length > 0 && (
-            <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-zinc-300 hover:bg-zinc-800/60">
-              <MessageSquare size={16} className="text-zinc-500" />
-              <span className="truncate text-left text-zinc-300">Current conversation</span>
+          {!historyLoaded && sessions.length === 0 ? (
+            <div className="flex items-center gap-2 px-2 py-2 text-sm text-zinc-500">
+              <span className="flex h-2 w-2 animate-pulse rounded-full bg-zinc-600"></span>
+              Loading…
+            </div>
+          ) : sessions.length > 0 ? (
+            sessions.map(s => (
+              <button 
+                key={s.id}
+                onClick={() => setSessionId(s.id)}
+                className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm transition ${s.id === sessionId ? 'bg-zinc-800/80 text-zinc-200' : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-300'}`}
+              >
+                <MessageSquare size={16} className={`${s.id === sessionId ? 'text-zinc-400' : 'text-zinc-600'} shrink-0`} />
+                <span className="truncate text-left">{s.preview}</span>
+              </button>
+            ))
+          ) : conversationPreview && messages.length > 0 ? (
+            <button className="flex w-full items-center gap-3 rounded-lg bg-zinc-800/40 px-2 py-2 text-sm text-zinc-300 hover:bg-zinc-800/60 transition">
+              <MessageSquare size={16} className="text-zinc-500 shrink-0" />
+              <span className="truncate text-left text-zinc-300">{conversationPreview}</span>
             </button>
+          ) : (
+            <p className="px-2 py-2 text-xs text-zinc-600 italic">No conversations yet</p>
           )}
         </nav>
 
@@ -486,9 +657,15 @@ export function Chat() {
           <VoiceScreen
             phase={voicePhase}
             transcript={liveTranscript}
+            onTranscriptChange={(newText) => {
+              setLiveTranscript(newText)
+              transcriptRef.current = newText
+            }}
             level={voiceLevel}
             onCancel={cancelVoice}
-            onStop={stopListeningNow}
+            onPause={pauseListeningNow}
+            onSend={sendListeningNow}
+            loadingProgress={loadingProgress}
           />
         ) : null}
       </div>

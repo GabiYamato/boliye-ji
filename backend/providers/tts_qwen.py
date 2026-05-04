@@ -1,11 +1,14 @@
 """Qwen3-TTS provider via OpenAI-compatible local server."""
 from __future__ import annotations
 
+import logging
+import time
 import httpx
 
 import config
 from providers.tts_provider import TTSProvider
 
+log = logging.getLogger(__name__)
 
 class QwenTTSProvider(TTSProvider):
     """Calls a locally-hosted Qwen3-TTS OpenAI-compatible server.
@@ -66,10 +69,21 @@ class QwenTTSProvider(TTSProvider):
             "response_format": "wav",
         }
 
+        log.info(f"====== TTS REQUEST (Voice: {self._voice}) ======")
+        log.info(f"Text snippet: {text[:60]}{'...' if len(text) > 60 else ''}")
+        
+        start_t = time.time()
         with httpx.Client(timeout=120.0) as client:
             resp = client.post(self._url, json=payload, headers=headers)
             resp.raise_for_status()
-            return resp.content
+            audio_bytes = resp.content
+            
+        elapsed = time.time() - start_t
+        log.info(f"====== TTS RESPONSE ({elapsed:.2f}s) ======")
+        log.info(f"Generated {len(audio_bytes)} bytes of audio data")
+        log.info("==========================================")
+        
+        return audio_bytes
 
     # ------------------------------------------------------------------
     def name(self) -> str:

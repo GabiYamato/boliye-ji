@@ -11,6 +11,7 @@ from auth.db import SessionLocal
 from auth.deps import get_current_user
 from auth.models import User, ChatMessage
 from chat.rag import chat_reply
+from voice.fillers import get_random_filler
 from voice.stt import transcribe_with_meta
 from voice.tts import synthesize_wav
 
@@ -37,6 +38,25 @@ def _require_whisper():
     if state.whisper_model is None:
         raise HTTPException(status_code=503, detail="Whisper not loaded")
     return state.whisper_model
+
+
+@router.get("/filler")
+async def voice_filler(user: User = Depends(get_current_user)):
+    """Return a random pre-generated filler audio clip.
+
+    Played during the 'thinking' phase to keep the user engaged
+    while the LLM generates a real response.
+    """
+    clip = get_random_filler()
+    if clip is None:
+        return {"text": "Please hold on a moment...", "audio_base64": "", "audio_mime": "audio/wav"}
+
+    audio_b64 = base64.b64encode(clip["audio_bytes"]).decode("ascii")
+    return {
+        "text": clip["text"],
+        "audio_base64": audio_b64,
+        "audio_mime": "audio/wav",
+    }
 
 
 @router.post("/transcribe")
@@ -68,6 +88,8 @@ async def voice_transcribe_chunk(
 async def voice_process(
     audio: UploadFile = File(...),
     messages: str | None = Form(None),
+    session_id: str = Form("default"),
+    override_text: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -81,19 +103,22 @@ async def voice_process(
     raw = await audio.read()
     suf = _suffix_from_filename(audio.filename or "")
     meta = transcribe_with_meta(whisper_model, raw, suf)
-    user_text = str(meta["text"]).strip()
+    
+    # Use override_text if provided (user manually edited transcript), otherwise STT
+    user_text = override_text.strip() if override_text and override_text.strip() else str(meta["text"]).strip()
+    
     if not user_text:
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
 
     # Store user message
-    db_user_msg = ChatMessage(user_id=user.id, role="user", content=user_text)
+    db_user_msg = ChatMessage(user_id=user.id, session_id=session_id, role="user", content=user_text)
     db.add(db_user_msg)
     db.commit()
 
     # Load FULL conversation history from DB
     db_msgs = (
         db.query(ChatMessage)
-        .filter(ChatMessage.user_id == user.id)
+        .filter(ChatMessage.user_id == user.id, ChatMessage.session_id == session_id)
         .order_by(ChatMessage.id.asc())
         .all()
     )
@@ -103,7 +128,7 @@ async def voice_process(
     reply_text = chat_reply(history)
 
     # Store assistant message
-    db_asst_msg = ChatMessage(user_id=user.id, role="assistant", content=reply_text)
+    db_asst_msg = ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=reply_text)
     db.add(db_asst_msg)
     db.commit()
 

@@ -1,12 +1,15 @@
 """Ollama LLM provider — kept as a fallback for local-only setups."""
 from __future__ import annotations
 
+import logging
+import time
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 import config
 from providers.llm_provider import LLMProvider
 
+log = logging.getLogger(__name__)
 
 class OllamaProvider(LLMProvider):
     """Local Ollama LLM backend."""
@@ -31,8 +34,22 @@ class OllamaProvider(LLMProvider):
             else:
                 lc_msgs.append(HumanMessage(content=content))
 
+        log.info(f"====== OLLAMA REQUEST ({config.OLLAMA_LLM_MODEL}) ======")
+        log.info(f"Messages count: {len(lc_msgs)}")
+        if messages:
+            log.info(f"Latest input: {messages[-1].get('content', '')}")
+            
+        start_t = time.time()
         out = self._llm.invoke(lc_msgs)
-        return str(out.content or "").strip()
+        elapsed = time.time() - start_t
+        
+        reply = str(out.content or "").strip()
+        
+        log.info(f"====== OLLAMA RESPONSE ({elapsed:.2f}s) ======")
+        log.info(reply)
+        log.info("========================================")
+        
+        return reply
 
     # ------------------------------------------------------------------
     def name(self) -> str:

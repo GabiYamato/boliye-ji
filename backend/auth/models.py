@@ -21,6 +21,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, default="default", index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     role = Column(String, nullable=False)
     content = Column(String, nullable=False)

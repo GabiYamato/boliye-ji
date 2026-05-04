@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking'
+export type VoicePhase = 'idle' | 'listening' | 'thinking' | 'speaking' | 'reviewing'
 
 export function VoiceOrb({
   phase,
@@ -23,7 +23,7 @@ export function VoiceOrb({
     const updateLevel = () => {
       setSmoothedLevel((prev) => {
         const diff = level - prev
-        const easing = diff > 0 ? 0.4 : 0.15 
+        const easing = diff > 0 ? 0.2 : 0.1 
         return prev + diff * easing
       })
       animationFrame = requestAnimationFrame(updateLevel)
@@ -60,8 +60,8 @@ export function VoiceOrb({
           style={{
             filter: 'blur(80px)',
             opacity: active ? 0.8 + intensity * 0.2 : 0.0,
-            transform: `scaleY(${1 + intensity * 0.6}) translateY(${active ? '10%' : '60%'})`,
-            transition: 'opacity 0.6s ease, transform 0.2s ease-out',
+            transform: `scaleY(${1 + intensity * 0.3}) translateY(${active ? '10%' : '60%'})`,
+            transition: 'opacity 0.6s ease, transform 0.3s ease-out',
           }}
         >
           {/* Deep Blue Base */}
@@ -86,9 +86,9 @@ export function VoiceOrb({
 
           {/* Center Cyan Highlight for speaking */}
           <div 
-            className="absolute bottom-[0%] left-[15%] right-[15%] h-[60%] transition-all duration-100 ease-out"
+            className="absolute bottom-[0%] left-[15%] right-[15%] h-[60%] transition-all duration-200 ease-out"
             style={{
-              transform: `scaleY(${1 + intensity * 2.5}) scaleX(${1 + intensity * 0.8})`,
+              transform: `scaleY(${1 + intensity * 1.5}) scaleX(${1 + intensity * 0.4})`,
               opacity: isSpeaking ? 0.8 + intensity * 0.2 : (isListening ? 0.3 : 0),
             }}
           >
@@ -97,9 +97,9 @@ export function VoiceOrb({
           
           {/* Extra Bright Core for high volume */}
           <div 
-            className="absolute bottom-[5%] left-[25%] right-[25%] h-[40%] rounded-full bg-white mix-blend-overlay transition-all duration-75 ease-out"
+            className="absolute bottom-[5%] left-[25%] right-[25%] h-[40%] rounded-full bg-white mix-blend-overlay transition-all duration-150 ease-out"
             style={{
-              transform: `scaleY(${intensity * 3})`,
+              transform: `scaleY(${1 + intensity * 1.5})`,
               opacity: isSpeaking ? intensity * 0.8 : 0,
             }}
           />
