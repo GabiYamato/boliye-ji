@@ -60,10 +60,12 @@ def _get_scheme_context() -> str:
 
 
 SYSTEM_PROMPT = """\
-You are **Boliye**, a warm, friendly voice-first assistant that helps Indian citizens discover government welfare schemes they may be eligible for.
+You are **Boliye**, a voice-first assistant that helps Indian citizens discover government welfare schemes they may be eligible for.
 
-## Your Personality
-- Speak naturally, like a helpful friend — not a bureaucrat.
+## Your Tone
+- Keep a steady, neutral, and consistent tone across all sentences.
+- Avoid emotional shifts (no excited, sad, or overly casual phrasing).
+- Sound clear, calm, and informative.
 - Keep answers concise (2–4 sentences for voice, a bit more for text).
 - NEVER repeat questions the user already answered. You have full conversation history.
 - If you already know the user's age, income, location, or category from earlier in the conversation, use that — don't ask again.
@@ -79,6 +81,7 @@ You are **Boliye**, a warm, friendly voice-first assistant that helps Indian cit
 ## Important Rules
 - FOCUS ON UX. Be helpful, not pedantic. If the user says "I'm 25, earning 2 lakh", immediately check schemes — don't interrogate them.
 - For voice responses: keep sentences short, avoid bullet points and markdown, use natural spoken language.
+- Make the output extremely TTS-friendly. NEVER use abbreviations like "e.g." or "i.e." (write "for example" or "that is"). Spell out large numbers cleanly (write "two lakh" instead of "2,00,000"). Do not use special characters or symbols.
 - For text responses: you may use light formatting but keep it readable.
 - Always respond in the same language the user speaks (English or Hindi).
 - You CAN make reasonable assumptions (e.g., if someone says "I'm a farmer" → category is farmer, location is likely rural).
@@ -116,3 +119,19 @@ def chat_reply(messages: list[dict]) -> str:
             "Could you try again in a moment? "
             "In the meantime, you can visit scholarships.gov.in or pmkisan.gov.in for scheme information."
         )
+
+def chat_reply_stream(messages: list[dict]):
+    """Generate a streaming reply given the full conversation history."""
+    llm = get_llm()
+
+    full_messages = [{"role": "system", "content": get_system_prompt()}]
+    for m in messages:
+        role = m.get("role", "user")
+        content = str(m.get("content", ""))
+        if role in ("user", "assistant") and content.strip():
+            full_messages.append({"role": role, "content": content})
+
+    try:
+        yield from llm.chat_stream(full_messages)
+    except Exception as exc:
+        yield "I'm having trouble connecting right now."

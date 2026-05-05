@@ -24,7 +24,7 @@ TTS_HF_MODEL = os.getenv("TTS_HF_MODEL", "facebook/mms-tts-eng")
 TTS_QWEN_BASE_URL = os.getenv("TTS_QWEN_BASE_URL", "")
 TTS_QWEN_MODEL = os.getenv("TTS_QWEN_MODEL", "qwen3-tts")
 TTS_QWEN_API_KEY = os.getenv("TTS_QWEN_API_KEY", "")
-TTS_QWEN_VOICE = os.getenv("TTS_QWEN_VOICE", "Vivian")
+TTS_QWEN_VOICE = os.getenv("TTS_QWEN_VOICE", "Ryan")
 TTS_DEVICE = os.getenv("TTS_DEVICE", "auto")
 
 # ── STT ──────────────────────────────────────────────────────────────

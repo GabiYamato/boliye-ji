@@ -18,18 +18,18 @@ import httpx
 # ── Configuration ────────────────────────────────────────────────────
 TTS_BASE = os.getenv("TTS_QWEN_BASE_URL", "http://localhost:8880")
 TTS_URL = f"{TTS_BASE.rstrip('/')}/v1/audio/speech"
-VOICE = os.getenv("TTS_QWEN_VOICE", "Vivian")
+VOICE = os.getenv("TTS_QWEN_VOICE", "Ryan")
 MODEL = os.getenv("TTS_QWEN_MODEL", "qwen3-tts")
 
 FILLERS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fillers"
 
 # The filler messages — short, friendly, conversational
 FILLERS = [
-    ("hold_on", "Please hold on a moment, while I browse my database."),
-    ("almost_there", "Almost there!"),
-    ("just_a_little_more", "Just a little more."),
-    ("one_moment", "One moment please, let me find that for you."),
-    ("searching", "Searching through the schemes for you."),
+    ("hold_on", "Please hold on for one moment, I'll browse through the available schemes."),
+    ("one_moment", "One moment, I'm checking the schemes that fit you."),
+    ("searching", "Searching through the available schemes for you."),
+    ("just_a_little_more", "Just a little more—I'm almost done."),
+    ("almost_there", "Almost there, finding the best match now."),
 ]
 
 

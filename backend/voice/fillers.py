@@ -15,11 +15,11 @@ FILLERS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fillers"
 
 # Filler metadata — text matches the generated audio
 FILLER_CLIPS = [
-    {"name": "hold_on", "text": "Please hold on a moment, while I browse my database."},
-    {"name": "almost_there", "text": "Almost there!"},
-    {"name": "just_a_little_more", "text": "Just a little more."},
-    {"name": "one_moment", "text": "One moment please, let me find that for you."},
-    {"name": "searching", "text": "Searching through the schemes for you."},
+    {"name": "hold_on", "text": "Please hold on for one moment, I'll browse through the available schemes."},
+    {"name": "one_moment", "text": "One moment, I'm checking the schemes that fit you."},
+    {"name": "searching", "text": "Searching through the available schemes for you."},
+    {"name": "just_a_little_more", "text": "Just a little more—I'm almost done."},
+    {"name": "almost_there", "text": "Almost there, finding the best match now."},
 ]
 
 _cached_fillers: list[dict] | None = None

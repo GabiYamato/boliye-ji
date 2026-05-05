@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from sqlalchemy.orm import Session
 
 from auth.db import SessionLocal
@@ -84,8 +84,11 @@ async def voice_transcribe_chunk(
     }
 
 
-@router.post("/process")
-async def voice_process(
+from fastapi.responses import StreamingResponse
+
+@router.post("/process_stream")
+async def voice_process_stream(
+    request: Request,
     audio: UploadFile = File(...),
     messages: str | None = Form(None),
     session_id: str = Form("default"),
@@ -93,61 +96,111 @@ async def voice_process(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Full voice pipeline: STT -> LLM (with history) -> TTS.
-
-    The key improvement: we load full conversation history from the DB
-    so the LLM remembers everything the user previously said.
-    """
+    from chat.rag import chat_reply_stream
+    import re
     whisper_model = _require_whisper()
-
     raw = await audio.read()
     suf = _suffix_from_filename(audio.filename or "")
     meta = transcribe_with_meta(whisper_model, raw, suf)
     
-    # Use override_text if provided (user manually edited transcript), otherwise STT
     user_text = override_text.strip() if override_text and override_text.strip() else str(meta["text"]).strip()
     
     if not user_text:
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
 
-    # Store user message
     db_user_msg = ChatMessage(user_id=user.id, session_id=session_id, role="user", content=user_text)
     db.add(db_user_msg)
     db.commit()
 
-    # Load FULL conversation history from DB
-    db_msgs = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.user_id == user.id, ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.id.asc())
-        .all()
-    )
+    db_msgs = db.query(ChatMessage).filter(ChatMessage.user_id == user.id, ChatMessage.session_id == session_id).order_by(ChatMessage.id.asc()).all()
     history = [{"role": m.role, "content": m.content} for m in db_msgs]
 
-    # Generate reply with full conversation context
-    reply_text = chat_reply(history)
+    async def event_generator():
+        yield f"data: {json.dumps({'type': 'transcript', 'text': user_text})}\n\n"
+        
+        lower_text = user_text.lower()
+        if "what can you do" in lower_text or "what do you do" in lower_text or "who are you" in lower_text:
+            text_intro = "I am an AI assistant designed to help you discover and apply for government welfare schemes. I can check your eligibility based on your profile, explain scheme details, and guide you through the application process."
+            try:
+                audio_bytes = await asyncio.to_thread(synthesize_wav, text_intro)
+                audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            except Exception:
+                audio_b64 = ""
+            yield f"data: {json.dumps({'type': 'audio', 'text': text_intro, 'audio_base64': audio_b64})}\n\n"
+            
+            with SessionLocal() as local_db:
+                db_asst_msg = ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=text_intro)
+                local_db.add(db_asst_msg)
+                local_db.commit()
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+            
+        sentence_buffer = ""
+        full_reply = ""
+        
+        for chunk in chat_reply_stream(history):
+            if await request.is_disconnected():
+                return
+            full_reply += chunk
+            sentence_buffer += chunk
+            
+            # Simple sentence boundary detection
+            match = re.search(r'([.?!])\s', sentence_buffer)
+            if match:
+                split_idx = match.end()
+                sentence = sentence_buffer[:split_idx].strip()
+                sentence_buffer = sentence_buffer[split_idx:]
+                
+                if sentence:
+                    if await request.is_disconnected():
+                        return
+                    try:
+                        audio_bytes = await asyncio.to_thread(synthesize_wav, sentence)
+                        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                    except Exception as e:
+                        log.error("TTS failed: %s", e)
+                        audio_b64 = ""
+                    
+                    yield f"data: {json.dumps({'type': 'audio', 'text': sentence, 'audio_base64': audio_b64})}\n\n"
+                
+        if sentence_buffer.strip():
+            if await request.is_disconnected():
+                return
+            sentence = sentence_buffer.strip()
+            try:
+                audio_bytes = await asyncio.to_thread(synthesize_wav, sentence)
+                audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            except Exception:
+                audio_b64 = ""
+            yield f"data: {json.dumps({'type': 'audio', 'text': sentence, 'audio_base64': audio_b64})}\n\n"
+            
+        with SessionLocal() as local_db:
+            db_asst_msg = ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=full_reply)
+            local_db.add(db_asst_msg)
+            local_db.commit()
+            
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-    # Store assistant message
-    db_asst_msg = ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=reply_text)
-    db.add(db_asst_msg)
-    db.commit()
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-    # Synthesize speech -- gracefully degrade if TTS fails
-    audio_b64 = ""
-    audio_mime = "audio/wav"
+
+from pydantic import BaseModel
+
+class TTSRequest(BaseModel):
+    text: str
+
+@router.post("/tts")
+async def voice_tts(req: TTSRequest):
+    """Generate TTS for a single sentence."""
+    text = req.text.strip()
+    if not text:
+        return {"audio_base64": "", "audio_mime": "audio/wav"}
+        
     try:
-        audio_bytes = await asyncio.to_thread(synthesize_wav, reply_text)
+        audio_bytes = await asyncio.to_thread(synthesize_wav, text)
         audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        return {"audio_base64": audio_b64, "audio_mime": "audio/wav"}
     except Exception as exc:
-        log.error("TTS synthesis failed: %s", exc, exc_info=True)
-        # Don't crash the request -- return the text reply without audio
-
-    return {
-        "transcript": user_text,
-        "reply": reply_text,
-        "tts_text": reply_text,
-        "confidence": float(meta.get("confidence", 0.0)),
-        "cleaned_query": user_text,
-        "audio_base64": audio_b64,
-        "audio_mime": audio_mime,
-    }
+        log.error("TTS synthesis failed for chunk: %s", exc, exc_info=True)
+        return {"audio_base64": "", "audio_mime": "audio/wav"}

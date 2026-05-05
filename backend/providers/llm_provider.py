@@ -19,5 +19,9 @@ class LLMProvider(ABC):
         """
 
     @abstractmethod
+    def chat_stream(self, messages: list[dict[str, str]], temperature: float = 0.4):
+        """Yields chunks of the assistant's response text."""
+
+    @abstractmethod
     def name(self) -> str:
         """Human-readable name for logging."""

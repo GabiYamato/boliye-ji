@@ -1,5 +1,7 @@
 import { MessageCircle, Plus, MessageSquare, LogOut, Mic, ArrowRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearToken, getToken } from '../api'
 import type { VoicePhase } from '../components/VoiceOrb'
@@ -61,6 +63,8 @@ export function Chat() {
   const fillerAudioCtxRef = useRef<AudioContext | null>(null)
   const fillerSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const progressTimerRef = useRef<number | null>(null)
+  const voiceAbortRef = useRef<AbortController | null>(null)
+  const thinkingDoneRef = useRef(false)
 
   useEffect(() => {
     messagesRef.current = messages
@@ -134,17 +138,61 @@ export function Chat() {
     setInput('')
     setLoading(true)
     try {
-      const data = await apiFetch('/api/chat/message', {
+      const token = getToken()
+      const res = await fetch('/api/chat/message_stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           session_id: sessionId,
           messages: next.map((m) => ({ role: m.role, content: m.content })),
         }),
       })
-      const updated = [...next, { role: 'assistant' as const, content: data.reply }]
-      setMessages(updated)
-      messagesRef.current = updated
+
+      if (!res.ok) throw new Error('Chat request failed')
+      if (!res.body) throw new Error('No response body')
+
+      let assistantText = ''
+      const base = [...next, { role: 'assistant' as const, content: '' }]
+      setMessages(base)
+      messagesRef.current = base
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'token') {
+              assistantText += String(data.token || '')
+              setMessages((prev) => {
+                const updated = [...prev]
+                if (updated.length) {
+                  updated[updated.length - 1] = { role: 'assistant', content: assistantText }
+                }
+                return updated
+              })
+              messagesRef.current = [...messagesRef.current.slice(0, -1), { role: 'assistant', content: assistantText }]
+            } else if (data.type === 'done') {
+              break
+            }
+          } catch (e) {
+            console.warn('Failed to parse chat stream line', e)
+          }
+        }
+      }
       void fetchSessions()
     } catch (x) {
       setErr(x instanceof Error ? x.message : 'request failed')
@@ -182,50 +230,6 @@ export function Chat() {
       progress += (92 - progress) * 0.02
       setLoadingProgress(Math.min(92, progress))
     }, 100)
-  }
-
-  const playFillerDuringThinking = async () => {
-    try {
-      const data = await apiFetch('/api/voice/filler', { method: 'GET' })
-      if (!data.audio_base64 || !sessionActiveRef.current) return
-
-      // Show filler text
-      if (data.text) setLiveTranscript(data.text)
-
-      const audioBlob = decodeAudio(data.audio_base64, data.audio_mime || 'audio/wav')
-      const ac = new AudioContext()
-      fillerAudioCtxRef.current = ac
-      const arrBuf = await audioBlob.arrayBuffer()
-      const buff = await ac.decodeAudioData(arrBuf)
-      const source = ac.createBufferSource()
-      const analyser = ac.createAnalyser()
-      analyser.fftSize = 256
-      source.buffer = buff
-      source.connect(analyser)
-      analyser.connect(ac.destination)
-      fillerSourceRef.current = source
-
-      // Level metering for the voice orb
-      const probe = new Uint8Array(analyser.frequencyBinCount)
-      const meter = window.setInterval(() => {
-        analyser.getByteTimeDomainData(probe)
-        let s = 0
-        for (let i = 0; i < probe.length; i++) {
-          const n = (probe[i] - 128) / 128
-          s += n * n
-        }
-        const rms = Math.sqrt(s / probe.length)
-        setVoiceLevel(Math.min(1, rms * 8 + 0.05))
-      }, 80)
-
-      source.onended = () => {
-        window.clearInterval(meter)
-        fillerSourceRef.current = null
-      }
-      source.start(0)
-    } catch (e) {
-      console.warn('Filler audio failed:', e)
-    }
   }
 
   // ── Level metering ──────────────────────────────────────────
@@ -285,6 +289,7 @@ export function Chat() {
 
   const playWithMeter = async (audioBlob: Blob) => {
     const ac = new AudioContext()
+    await ac.resume()
     const arr = await audioBlob.arrayBuffer()
     const buff = await ac.decodeAudioData(arr.slice(0))
     const source = ac.createBufferSource()
@@ -393,39 +398,82 @@ export function Chat() {
         fd.append('override_text', transcriptRef.current)
       }
 
-      // Start filler audio and progress bar during thinking phase
+  // Start progress bar during thinking phase
       setVoicePhase('thinking')
+      thinkingDoneRef.current = false
       startProgressTimer()
-      void playFillerDuringThinking()
-      
-      try {
-        const data = await apiFetch('/api/voice/process', { method: 'POST', body: fd })
 
-        // Stop filler and snap progress to 100%
+      const finishThinking = () => {
+        if (thinkingDoneRef.current) return
+        thinkingDoneRef.current = true
         stopFillerAudio()
         stopProgressTimer()
         setLoadingProgress(100)
-        // Brief pause to show completion, then reset
-        await new Promise(r => setTimeout(r, 300))
-        setLoadingProgress(0)
+        window.setTimeout(() => setLoadingProgress(0), 300)
+        setVoicePhase('speaking')
+      }
+      
+      try {
+        const token = getToken()
+        const controller = new AbortController()
+        voiceAbortRef.current = controller
+        const res = await fetch('/api/voice/process_stream', {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: fd,
+          signal: controller.signal,
+        })
 
-        const userMsg: Msg = { role: 'user', content: data.transcript }
-        const asstMsg: Msg = { role: 'assistant', content: data.reply }
-        setMessages((prev) => [...prev, userMsg, asstMsg])
-        setLiveTranscript(data.reply)
-        
-        if (!sessionActiveRef.current) return
+        if (!res.ok) throw new Error('Voice request failed');
+        if (!res.body) throw new Error('No response body');
 
-        // Play TTS audio if available, otherwise skip playback
-        if (data.audio_base64) {
-          setVoicePhase('speaking')
-          const audioBlob = decodeAudio(String(data.audio_base64), String(data.audio_mime || 'audio/wav'))
-          await playWithMeter(audioBlob)
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullReply = '';
+
+        while (sessionActiveRef.current) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === 'transcript') {
+                   const userMsg: Msg = { role: 'user', content: data.text }
+                   setMessages((prev) => [...prev, userMsg])
+                   messagesRef.current = [...messagesRef.current, userMsg]
+                }
+                else if (data.type === 'audio') {
+             finishThinking()
+                   fullReply += (fullReply ? " " : "") + data.text;
+                   setLiveTranscript(fullReply);
+                   
+                   if (data.audio_base64 && sessionActiveRef.current) {
+                     const audioBlob = decodeAudio(String(data.audio_base64), 'audio/wav');
+                     await playWithMeter(audioBlob);
+                   }
+                }
+                else if (data.type === 'done') {
+             finishThinking()
+                   const asstMsg: Msg = { role: 'assistant', content: fullReply }
+                   setMessages((prev) => [...prev, asstMsg])
+                   messagesRef.current = [...messagesRef.current, asstMsg]
+                }
+              } catch (e) {
+                console.warn("Failed to parse SSE line", e);
+              }
+            }
+          }
         }
         
         if (sessionActiveRef.current) {
-          // Update the ref immediately before recursively calling startVoice
-          messagesRef.current = [...messagesRef.current, userMsg, asstMsg]
           setLoading(false)
           void fetchSessions()
           startVoice()
@@ -436,8 +484,13 @@ export function Chat() {
         setVoicePhase('idle')
         setVoiceOpen(false)
         sessionActiveRef.current = false
-        setErr(x instanceof Error ? x.message : 'voice request failed')
+        if (x instanceof DOMException && x.name === 'AbortError') {
+          // user cancelled
+        } else {
+          setErr(x instanceof Error ? x.message : 'voice request failed')
+        }
       } finally {
+        voiceAbortRef.current = null
         setLoading(false)
       }
     }
@@ -462,6 +515,10 @@ export function Chat() {
 
   const cancelVoice = () => {
     sessionActiveRef.current = false
+    if (voiceAbortRef.current) {
+      voiceAbortRef.current.abort()
+      voiceAbortRef.current = null
+    }
     stopVoiceSession()
     setVoiceOpen(false)
     setVoicePhase('idle')
@@ -556,21 +613,40 @@ export function Chat() {
 
       {/* Main Content */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* Mobile Header */}
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-800/60 bg-[#161618] px-4 py-3 sm:hidden">
-          <div className="flex items-center gap-2">
+        {/* Top Bar (ChatGPT style) */}
+        <header className="flex shrink-0 items-center justify-between px-4 py-3 z-20 bg-[#111113]">
+          {/* Mobile brand */}
+          <div className="flex items-center gap-2 sm:hidden">
             <div className="flex h-6 w-6 items-center justify-center rounded bg-zinc-800 text-zinc-100 shadow-inner">
               <MessageCircle size={14} />
             </div>
             <span className="font-semibold text-white">boliye</span>
           </div>
-          <button type="button" className="text-zinc-400 hover:text-zinc-200" onClick={logout}>
-            <LogOut size={20} />
-          </button>
+
+          {/* Model Selector / Center title */}
+          <div className="hidden sm:flex flex-1 items-center justify-start">
+            <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-lg font-semibold text-zinc-200 hover:bg-zinc-800/50 transition">
+              Boliye-Ji <span className="text-zinc-500 text-sm">▼</span>
+            </button>
+          </div>
+
+          {/* Right side icons */}
+          <div className="flex items-center gap-3">
+             <button type="button" className="sm:hidden text-zinc-400 hover:text-zinc-200" onClick={logout}>
+               <LogOut size={20} />
+             </button>
+             <div 
+               className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 text-sm font-semibold text-white shadow-sm cursor-pointer hover:opacity-90 transition"
+               onClick={logout}
+               title="Log out"
+             >
+               G
+             </div>
+          </div>
         </header>
 
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-4 py-8 sm:px-0">
+        <div className="flex-1 overflow-y-auto w-full">
+          <div className="mx-auto flex w-full max-w-4xl flex-col px-4 pt-4 pb-40 sm:px-6">
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center pb-20">
                 <h1 className="text-4xl font-semibold tracking-tight text-white mb-10">boliye</h1>
@@ -588,8 +664,10 @@ export function Chat() {
                         <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-100">
                           <MessageCircle size={16} />
                         </div>
-                        <div className="prose prose-invert max-w-none text-[15px] leading-relaxed text-zinc-300">
-                          {m.content}
+                        <div className="prose prose-invert max-w-none text-[15px] leading-relaxed text-zinc-300 prose-p:leading-relaxed prose-pre:bg-zinc-800/50 prose-pre:border prose-pre:border-zinc-700/50">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {m.content}
+                          </ReactMarkdown>
                         </div>
                       </div>
                     )}
@@ -611,10 +689,11 @@ export function Chat() {
               </div>
             )}
           </div>
+        </div>
 
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#111113] via-[#111113] to-transparent pt-10 pb-6 px-4 sm:px-8">
-            <div className="mx-auto max-w-3xl">
-              <div className="relative flex flex-col rounded-2xl border border-zinc-700/50 bg-[#202022] p-2 shadow-xl focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-500">
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#111113] via-[#111113] to-transparent pt-10 pb-6 px-4 sm:px-8 pointer-events-none">
+          <div className="mx-auto max-w-4xl pointer-events-auto">
+            <div className="relative flex flex-col rounded-2xl border border-zinc-700/50 bg-[#202022] p-2 shadow-xl focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-500">
                 <textarea
                   className="max-h-48 min-h-[44px] w-full resize-none border-0 bg-transparent px-3 py-3 text-[15px] leading-relaxed text-zinc-100 placeholder-zinc-500 outline-none focus:ring-0"
                   placeholder="Ask anything..."
@@ -652,7 +731,6 @@ export function Chat() {
               </div>
             </div>
           </div>
-        </div>
         {voiceOpen ? (
           <VoiceScreen
             phase={voicePhase}

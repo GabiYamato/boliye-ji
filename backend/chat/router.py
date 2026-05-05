@@ -1,7 +1,9 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends
+import json
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from auth.db import SessionLocal
 from auth.deps import get_current_user
@@ -88,6 +90,19 @@ def chat_message(body: ChatIn, user: User = Depends(get_current_user), db: Sessi
 
     if not user_text:
         return ChatOut(reply="Please share your query so I can help you find relevant schemes.")
+    lower_text = user_text.lower()
+    if "what can you do" in lower_text or "what do you do" in lower_text or "who are you" in lower_text:
+        reply_text = (
+            "I am an AI assistant designed to help you discover and apply for government welfare schemes. "
+            "I can check your eligibility based on your profile, explain scheme details, and guide you through the application process."
+        )
+        db_user_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="user", content=user_text)
+        db.add(db_user_msg)
+        db.commit()
+        db_asst_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="assistant", content=reply_text)
+        db.add(db_asst_msg)
+        db.commit()
+        return ChatOut(reply=reply_text)
 
     # Store user message
     db_user_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="user", content=user_text)
@@ -112,3 +127,68 @@ def chat_message(body: ChatIn, user: User = Depends(get_current_user), db: Sessi
     db.commit()
 
     return ChatOut(reply=reply_text)
+
+
+@router.post("/message_stream")
+def chat_message_stream(body: ChatIn, request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Stream a text-only chat reply with full conversation history."""
+    from chat.rag import chat_reply_stream
+
+    user_text = ""
+    for m in reversed(body.messages):
+        if str(m.role).strip().lower() == "user" and str(m.content).strip():
+            user_text = str(m.content).strip()
+            break
+    if not user_text:
+        async def empty_generator():
+            yield f"data: {json.dumps({'type': 'token', 'token': 'Please share your query so I can help you find relevant schemes.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(empty_generator(), media_type="text/event-stream")
+
+    lower_text = user_text.lower()
+    if "what can you do" in lower_text or "what do you do" in lower_text or "who are you" in lower_text:
+        reply_text = (
+            "I am an AI assistant designed to help you discover and apply for government welfare schemes. "
+            "I can check your eligibility based on your profile, explain scheme details, and guide you through the application process."
+        )
+
+        async def canned_generator():
+            yield f"data: {json.dumps({'type': 'token', 'token': reply_text})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        db_user_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="user", content=user_text)
+        db.add(db_user_msg)
+        db.commit()
+        db_asst_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="assistant", content=reply_text)
+        db.add(db_asst_msg)
+        db.commit()
+        return StreamingResponse(canned_generator(), media_type="text/event-stream")
+
+    db_user_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="user", content=user_text)
+    db.add(db_user_msg)
+    db.commit()
+
+    db_msgs = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.user_id == user.id, ChatMessage.session_id == body.session_id)
+        .order_by(ChatMessage.id.asc())
+        .all()
+    )
+    history = [{"role": m.role, "content": m.content} for m in db_msgs]
+
+    async def event_generator():
+        full_reply = ""
+        for chunk in chat_reply_stream(history):
+            if await request.is_disconnected():
+                return
+            if not chunk:
+                continue
+            full_reply += chunk
+            yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
+
+        db_asst_msg = ChatMessage(user_id=user.id, session_id=body.session_id, role="assistant", content=full_reply)
+        db.add(db_asst_msg)
+        db.commit()
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

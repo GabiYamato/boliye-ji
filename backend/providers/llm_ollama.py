@@ -51,6 +51,24 @@ class OllamaProvider(LLMProvider):
         
         return reply
 
+    def chat_stream(self, messages: list[dict[str, str]], temperature: float = 0.4):
+        lc_msgs = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = str(m.get("content", ""))
+            if role == "system":
+                lc_msgs.append(SystemMessage(content=content))
+            elif role == "assistant":
+                lc_msgs.append(AIMessage(content=content))
+            else:
+                lc_msgs.append(HumanMessage(content=content))
+
+        log.info(f"====== OLLAMA STREAM REQUEST ({config.OLLAMA_LLM_MODEL}) ======")
+        for chunk in self._llm.stream(lc_msgs):
+            if chunk.content:
+                yield chunk.content
+        log.info("====== OLLAMA STREAM COMPLETE ======")
+
     # ------------------------------------------------------------------
     def name(self) -> str:
         return f"Ollama ({config.OLLAMA_LLM_MODEL})"

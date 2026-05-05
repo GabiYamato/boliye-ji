@@ -1,6 +1,8 @@
-import { Settings, X, Pause, ArrowRight, Check } from 'lucide-react'
+import { Settings, X, Pause, ArrowRight } from 'lucide-react'
 import { VoiceOrb, type VoicePhase } from './VoiceOrb'
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export function VoiceScreen({
   phase,
@@ -85,10 +87,10 @@ export function VoiceScreen({
           </button>
         </div>
 
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center -mt-32 pointer-events-none">
-          <div className="relative w-full max-w-3xl h-[300px] flex flex-col items-center justify-end pb-4">
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center -mt-20 sm:-mt-32 pointer-events-none">
+          <div className="relative w-full max-w-4xl h-[60vh] flex flex-col items-center justify-end pb-4">
             {/* Top fade mask so text vanishes smoothly */}
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black to-transparent z-20 pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black to-transparent z-20 pointer-events-none" />
             
             {items.map((item, index) => {
               const distance = items.length - 1 - index
@@ -97,7 +99,7 @@ export function VoiceScreen({
               return (
                 <div
                   key={item.id}
-                  className="absolute w-full px-8 text-center transition-all duration-700 ease-out flex justify-center"
+                  className="absolute w-full px-4 sm:px-8 text-center transition-all duration-700 ease-out flex justify-center"
                   style={{
                     transform: `translateY(${-distance * 80}px) scale(${1 - distance * 0.05})`,
                     opacity: isLast ? 1 : Math.max(0, 0.5 - distance * 0.2),
@@ -105,39 +107,32 @@ export function VoiceScreen({
                     zIndex: 10 - distance,
                   }}
                 >
-                  <div className={`animate-text-slide-up w-full ${isLast && phase === 'reviewing' ? 'pointer-events-auto' : ''}`}>
+                  <div className={`animate-text-slide-up w-full ${isLast && (phase === 'reviewing' || phase === 'speaking') ? 'pointer-events-auto' : ''}`}>
                     {item.phase === 'reviewing' && isLast ? (
                       <textarea
                         value={transcript}
                         onChange={(e) => onTranscriptChange?.(e.target.value)}
-                        className="w-full bg-transparent border-b border-white/20 text-center text-2xl sm:text-3xl lg:text-4xl font-medium leading-tight tracking-tight drop-shadow-lg text-white/90 outline-none resize-none focus:border-white/50 transition-colors"
-                        rows={3}
+                        className="w-full max-h-[50vh] bg-transparent border-b border-white/20 text-center text-xl sm:text-2xl lg:text-3xl font-medium leading-relaxed tracking-tight drop-shadow-lg text-white/90 outline-none resize-none focus:border-white/50 transition-colors"
+                        rows={transcript.length > 100 ? 6 : 3}
                         autoFocus
                         placeholder="Edit your message..."
                       />
                     ) : item.phase === 'thinking' && isLast ? (
                       <div className="flex flex-col items-center gap-4">
-                        <div className="flex items-center justify-center gap-4 text-white/90 drop-shadow-lg">
-                          <div className="flex gap-1.5">
-                            {[0, 1, 2].map((i) => (
-                              <div
-                                key={i}
-                                className="h-2.5 w-2.5 rounded-full bg-white/60"
-                                style={{
-                                  animation: `dots-bounce 1.4s ease-in-out ${i * 0.16}s infinite`,
-                                }}
-                              />
-                            ))}
-                          </div>
-                          <p className="text-2xl sm:text-3xl lg:text-4xl font-medium tracking-[0.05em]">
-                            {item.text}
-                          </p>
-                        </div>
+                        <p className="text-xl sm:text-2xl lg:text-3xl font-medium tracking-[0.05em] text-white/90 drop-shadow-lg">
+                          {item.text}
+                        </p>
                       </div>
                     ) : (
-                      <p className={`text-2xl sm:text-3xl lg:text-4xl font-medium leading-tight tracking-tight drop-shadow-lg ${isLast ? 'text-white/90' : 'text-white/50'}`}>
-                        {item.text}
-                      </p>
+                      <div className="max-h-[50vh] overflow-y-auto no-scrollbar scroll-smooth">
+                        <div
+                          className={`prose prose-invert max-w-none text-xl sm:text-2xl lg:text-3xl font-medium leading-relaxed tracking-tight drop-shadow-lg ${isLast ? 'text-white/90' : 'text-white/50'} prose-p:leading-relaxed prose-strong:text-white/90 prose-em:text-white/80 prose-a:text-indigo-200`}
+                        >
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {item.text}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -147,30 +142,22 @@ export function VoiceScreen({
         </div>
 
         {phase === 'thinking' && loadingProgress > 0 && (
-          <div className="relative z-10 mx-auto w-full max-w-md px-8 -mt-4 mb-4">
+          <div className="relative z-10 mx-auto w-full max-w-md px-8 -mt-4 mb-8">
             <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden backdrop-blur-sm">
               <div
-                className="h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden"
-                style={{
-                  width: `${loadingProgress}%`,
-                  background: 'linear-gradient(90deg, #0070F3, #48cae4, #9d4edd)',
-                }}
+                className="h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden bg-white"
+                style={{ width: `${loadingProgress}%` }}
               >
                 <div
                   className="absolute inset-0"
                   style={{
-                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite',
                   }}
                 />
               </div>
             </div>
-            <p className="mt-2 text-center text-xs text-white/40 font-medium tracking-wide">
-              {loadingProgress < 30 ? 'Processing your request...' : 
-               loadingProgress < 60 ? 'Analyzing schemes...' :
-               loadingProgress < 90 ? 'Preparing response...' : 'Almost done!'}
-            </p>
           </div>
         )}
 
